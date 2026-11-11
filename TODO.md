@@ -30,8 +30,22 @@ Done in 0.8.0: `notifications.*` answered in `omarchy.rs` (`act`, `invokeLast`, 
 `notifications.keyboard` and `expand` have no equivalent yet (they answer `none`). Fixed on the way:
 a panic when the popups layer closed while a layout report of it was still coming.
 
-Still global shortcuts that nobody hears without Quickshell: menus (`Super+Space`, ...) and panels.
-The next step.
+Done in 0.9.0: the Omarchy menu and its prompts (`plugins/omarchy_menu.rs`, with the hook
+`omarchy::on_shell_call` in core). `omarchy-menu toggle|summon|close <route>` and every
+`omarchy-shell shell toggle|summon|hide omarchy.menu '{...}'` open a panel with Omarchy's own menu
+(default `omarchy-menu.jsonc` plus the user's extensions: submenus, links, actions, `when`/`checked`/
+`disabled` conditions, the fonts/kernels/languages/power-profiles providers, search across the whole
+menu, keyboard and pointer). `omarchy-menu-select` and `omarchy-menu-input` (single and multiple
+selection, text input) answer through the same panel and the files they wait on. Keys rebound in
+`keys.rs`: `Super+Space`, `Super+Alt+Space` (apps = the launcher), `Super+Esc`, power key, and
+`Super+Ctrl+` C, O, H, Space, W, T, S, R, V (clipboard), `Super+Shift+Ctrl+Space`. Also
+`omarchy.dock apps`, and `shell toggle` of `omarchy.clipboard`, `omarchy.clock` and the
+audio/network/bluetooth/monitor/power panels (mapped to the clipboard, calendar and quick settings).
+
+Not yet: the image picker (`omarchy.image-picker`: the Theme and Background rows, `omarchy-theme-set`
+switcher), emojis (`omarchy.emojis`), reminders (`omarchy-reminder`), translations of the menu
+(`~/.config/omarchy/language`), `--on-change` live selects, and the rest of the plugin panels
+(weather, tailscale, elsewhen, ...). Next.
 
 Not reached this way (before `keys.rs`): the bindings Omarchy writes as Hyprland **global shortcuts**
 (`hl.dsp.global("omarchy:...")`, for the kinds listed in `/usr/share/omarchy/default/omarchy/shortcuts`:

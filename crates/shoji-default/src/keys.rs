@@ -10,7 +10,7 @@
 
 use std::process::Command;
 
-/// (keys, global shortcut it is by default, command, repeats while held, works when locked)
+/// (keys, global shortcut it is by default (empty: a plain command), command, repeats while held, works when locked)
 const KEYS: &[(&str, &str, &str, bool, bool)] = &[
     ("XF86AudioRaiseVolume", "audio.raise", "omarchy-audio-output-volume raise", true, true),
     ("XF86AudioLowerVolume", "audio.lower", "omarchy-audio-output-volume lower", true, true),
@@ -27,6 +27,20 @@ const KEYS: &[(&str, &str, &str, bool, bool)] = &[
     ("SUPER + ALT + comma", "ipc.notifications.dismissOne", "omarchy-shell notifications dismissOne", false, false),
     ("SUPER + SHIFT + comma", "ipc.notifications.dismissAll", "omarchy-shell notifications dismissAll", false, false),
     ("SUPER + SHIFT + ALT + comma", "ipc.notifications.showHistory", "omarchy-shell notifications showHistory", false, false),
+    ("SUPER + SPACE", "menu.root", "omarchy-menu toggle root", false, false),
+    ("SUPER + ALT + SPACE", "", "omarchy-shell omarchy.dock apps", false, false),
+    ("SUPER + ESCAPE", "menu.system", "omarchy-menu toggle system", false, false),
+    ("XF86PowerOff", "menu.system", "omarchy-menu toggle system", false, true),
+    ("SUPER + CTRL + C", "menu.capture", "omarchy-menu toggle capture", false, false),
+    ("SUPER + CTRL + O", "menu.toggle", "omarchy-menu toggle toggle", false, false),
+    ("SUPER + CTRL + H", "menu.hardware", "omarchy-menu toggle hardware", false, false),
+    ("SUPER + CTRL + SPACE", "menu.background", "omarchy-menu toggle background", false, false),
+    ("SUPER + CTRL + W", "menu.background", "omarchy-menu toggle background", false, false),
+    ("SUPER + SHIFT + CTRL + SPACE", "menu.theme", "omarchy-menu toggle theme", false, false),
+    ("SUPER + CTRL + T", "menu.theme", "omarchy-menu toggle theme", false, false),
+    ("SUPER + CTRL + S", "menu.share", "omarchy-menu toggle share", false, false),
+    ("SUPER + CTRL + R", "menu.reminder-set", "omarchy-menu toggle reminder-set", false, false),
+    ("SUPER + CTRL + V", "panel.omarchy.clipboard", "omarchy-shell shell toggle omarchy.clipboard", false, false),
 ];
 
 fn eval(code: &str) {
@@ -36,7 +50,7 @@ fn eval(code: &str) {
 fn lua(to_command: bool) -> String {
     let mut code = String::new();
     for (keys, shortcut, command, repeats, locked) in KEYS {
-        let dispatcher = if to_command {
+        let dispatcher = if to_command || shortcut.is_empty() {
             format!("hl.dsp.exec_cmd('{command}')")
         } else {
             format!("hl.dsp.global('omarchy:{shortcut}')")

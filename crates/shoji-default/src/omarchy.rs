@@ -159,6 +159,54 @@ fn serve_one(
     }
 }
 
+thread_local! {
+    static SHELL_HOOK: std::cell::RefCell<Option<std::rc::Rc<ShellHook>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+type ShellHook = dyn Fn(&str, &str, &str) -> bool;
+
+/// For a plugin that is one of Omarchy's shell plugins (the menu, say): `f(verb, id, payload)` is
+/// called for `omarchy-shell shell toggle|summon|hide|call <id> <payload>` and says whether it
+/// took it (`omarchy-shell shell summon omarchy.menu '{"menu":"system"}'` is how Omarchy opens its
+/// menu). What it does not take falls to the stock panels below.
+pub fn on_shell_call(f: impl Fn(&str, &str, &str) -> bool + 'static) {
+    SHELL_HOOK.with(|h| *h.borrow_mut() = Some(std::rc::Rc::new(f)));
+}
+
+/// The stock panel that stands for one of Omarchy's, if there is one.
+fn stock_panel(id: &str) -> Option<&'static str> {
+    Some(match id {
+        "omarchy.clipboard" => "clipboard",
+        "omarchy.clock" | "shivam.clock" => "calendar",
+        "omarchy.audio" | "omarchy.bluetooth" | "omarchy.network" | "omarchy.monitor"
+        | "omarchy.power" => "quick-settings",
+        _ => return None,
+    })
+}
+
+/// `shell toggle|summon|hide <id> [payload]`.
+fn shell_call(args: &[String], method: &str) -> Option<String> {
+    let id = args.first()?.as_str();
+    let payload = args.get(1).map_or("{}", String::as_str);
+    let hook = SHELL_HOOK.with(|h| h.borrow().clone());
+    if hook.is_some_and(|h| h(method, id, payload)) {
+        return Some("ok".into());
+    }
+    let panel = crate::panels::lookup(stock_panel(id)?)?;
+    let output = crate::ipc::focused_output()?;
+    match method {
+        "toggle" => {
+            let open_now = crate::panels::current().is_some_and(|(o, p)| o == output && p == panel);
+            if open_now { crate::panels::close() } else { crate::panels::open(&output, panel) }
+        }
+        "summon" | "show" | "open" => crate::panels::open(&output, panel),
+        "hide" | "close" => crate::panels::close(),
+        _ => return None,
+    }
+    Some("ok".into())
+}
+
 /// Runs on the UI thread. `Some(output)` if the call was ours.
 fn handle(fields: &[String]) -> Option<String> {
     let [target, method, args @ ..] = fields else { return None };
@@ -178,6 +226,14 @@ fn handle(fields: &[String]) -> Option<String> {
             Some("ok".into())
         }
         ("notifications", method) => notifications(method, args),
+        ("shell", m @ ("toggle" | "summon" | "hide" | "show" | "call")) => shell_call(args, m),
+        // The apps: Omarchy's dock grid is the launcher here.
+        ("omarchy.dock", "apps") => {
+            let output = crate::ipc::focused_output()?;
+            let panel = crate::panels::lookup("launcher")?;
+            crate::panels::open(&output, panel);
+            Some("ok".into())
+        }
         _ => None,
     }
 }
