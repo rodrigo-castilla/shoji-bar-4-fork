@@ -53,15 +53,17 @@ thread_local! {
 }
 
 /// What `omarchy-osd` sends: `{icon, message, value, progressText, max, duration}`, as JSON. The
-/// volume and the brightness are shown from their own state, so they are left out here.
+/// keys change the volume of the physical sink, which is not always the default one that the pill
+/// follows (a DSP sink sits in front of it), so what the call says is what is shown.
 pub fn notice(payload: &str) {
     let Ok(json) = serde_json::from_str::<serde_json::Value>(payload) else { return };
     let field = |k: &str| json.get(k).and_then(|v| v.as_str()).unwrap_or("").to_owned();
     let icon = field("icon").to_lowercase();
-    if icon.starts_with("volume") || matches!(icon.as_str(), "brightness" | "display") {
-        return;
-    }
     let symbol: &'static Symbol = match icon.as_str() {
+        "volume-muted" | "volume-mute" | "muted" | "mute" => icons::VOLUME_OFF,
+        "volume-low" => icons::VOLUME_DOWN,
+        "volume" | "volume-medium" | "volume-high" => icons::VOLUME_UP,
+        "brightness" | "display" => icons::BRIGHTNESS_6,
         "microphone" | "mic" => icons::MIC,
         "microphone-muted" | "microphone-off" | "mic-muted" | "mic-off" => icons::MIC_OFF,
         "keyboard" => icons::KEYBOARD,

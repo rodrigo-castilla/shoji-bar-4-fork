@@ -173,6 +173,7 @@ fn run(line: &str) -> Result<String, String> {
         }
         ["status"] => Ok(status()),
         ["quit"] => {
+            crate::keys::release();
             crate::omarchy::release();
             let _ = std::fs::remove_file(socket());
             quit();

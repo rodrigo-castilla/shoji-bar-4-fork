@@ -17,7 +17,17 @@ aside (`.quickshell`), binds its own, does what it has an answer for (`media.nex
 playPause|play|pause`, `osd.show`) and forwards everything else to Quickshell's socket, relaying its
 reply. On `msg quit` the socket goes back; after a crash the next start repairs it.
 
-Not reached this way: the bindings Omarchy writes as Hyprland **global shortcuts**
+Done in 0.7.3 (`keys.rs`): while shoji runs, the keys Omarchy binds as global shortcuts for volume,
+brightness and media are rebound (with `hyprctl eval`, nothing written to the user's files) to the
+command Omarchy falls back to (`omarchy-audio-output-volume raise`, `omarchy-brightness-display
++5%`, `omarchy-shell media next`, ...), and put back on `msg quit`. `osd.show` now draws the volume
+and brightness pills from what the call says (the keys move the physical sink, which is not always
+the default one the pill used to follow).
+
+Still global shortcuts that nobody hears without Quickshell: menus, panels and
+`notifications.*` (`Super+,` and friends). The next step.
+
+Not reached this way (before `keys.rs`): the bindings Omarchy writes as Hyprland **global shortcuts**
 (`hl.dsp.global("omarchy:...")`, for the kinds listed in `/usr/share/omarchy/default/omarchy/shortcuts`:
 menus, panels, `audio.*`, `brightness.*`, `ipc.media.*`, `ipc.notifications.*`), which go to whoever
 registered them, Quickshell. To catch them, `alter-bar` has to rebind those keys to the command form

@@ -14,6 +14,7 @@ pub mod clipboard;
 mod compose;
 pub mod dock;
 pub mod ipc;
+pub mod keys;
 pub mod launcher;
 pub mod lock;
 pub mod media_panel;
