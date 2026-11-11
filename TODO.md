@@ -42,8 +42,13 @@ selection, text input) answer through the same panel and the files they wait on.
 `omarchy.dock apps`, and `shell toggle` of `omarchy.clipboard`, `omarchy.clock` and the
 audio/network/bluetooth/monitor/power panels (mapped to the clipboard, calendar and quick settings).
 
-Not yet: the image picker (`omarchy.image-picker`: the Theme and Background rows, `omarchy-theme-set`
-switcher), emojis (`omarchy.emojis`), reminders (`omarchy-reminder`), translations of the menu
+Done in 0.10.0: the image picker (`plugins/image_picker.rs`): `omarchy-shell image-selector open ...`
+(what `omarchy-menu-images` and the Background row use, so `Super+Ctrl+Space`) and
+`shell summon omarchy.image-picker '{"source":"themes"}'` (the Theme row, applied with
+`omarchy-theme-set`). Arrows, Enter, Escape, search, click. `notifications.keyboard` and `expand` open
+the list in quick settings, as `showHistory` does.
+
+Not yet: emojis (`omarchy.emojis`), reminders (`omarchy-reminder`), translations of the menu
 (`~/.config/omarchy/language`), `--on-change` live selects, and the rest of the plugin panels
 (weather, tailscale, elsewhen, ...). Next.
 

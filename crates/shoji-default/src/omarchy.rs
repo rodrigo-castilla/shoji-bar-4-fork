@@ -160,18 +160,27 @@ fn serve_one(
 }
 
 thread_local! {
-    static SHELL_HOOK: std::cell::RefCell<Option<std::rc::Rc<ShellHook>>> =
-        const { std::cell::RefCell::new(None) };
+    static SHELL_HOOK: std::cell::RefCell<Vec<std::rc::Rc<ShellHook>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    static CALL_HOOK: std::cell::RefCell<Vec<std::rc::Rc<CallHook>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
 }
 
 type ShellHook = dyn Fn(&str, &str, &str) -> bool;
+type CallHook = dyn Fn(&str, &str, &[String]) -> Option<String>;
+
+/// For a plugin that answers a whole IPC target (`omarchy-shell image-selector open ...`):
+/// `f(target, method, args)` returns the reply, or `None` for what is not its own.
+pub fn on_call(f: impl Fn(&str, &str, &[String]) -> Option<String> + 'static) {
+    CALL_HOOK.with(|h| h.borrow_mut().push(std::rc::Rc::new(f)));
+}
 
 /// For a plugin that is one of Omarchy's shell plugins (the menu, say): `f(verb, id, payload)` is
 /// called for `omarchy-shell shell toggle|summon|hide|call <id> <payload>` and says whether it
 /// took it (`omarchy-shell shell summon omarchy.menu '{"menu":"system"}'` is how Omarchy opens its
 /// menu). What it does not take falls to the stock panels below.
 pub fn on_shell_call(f: impl Fn(&str, &str, &str) -> bool + 'static) {
-    SHELL_HOOK.with(|h| *h.borrow_mut() = Some(std::rc::Rc::new(f)));
+    SHELL_HOOK.with(|h| h.borrow_mut().push(std::rc::Rc::new(f)));
 }
 
 /// The stock panel that stands for one of Omarchy's, if there is one.
@@ -189,8 +198,8 @@ fn stock_panel(id: &str) -> Option<&'static str> {
 fn shell_call(args: &[String], method: &str) -> Option<String> {
     let id = args.first()?.as_str();
     let payload = args.get(1).map_or("{}", String::as_str);
-    let hook = SHELL_HOOK.with(|h| h.borrow().clone());
-    if hook.is_some_and(|h| h(method, id, payload)) {
+    let hooks = SHELL_HOOK.with(|h| h.borrow().clone());
+    if hooks.iter().any(|h| h(method, id, payload)) {
         return Some("ok".into());
     }
     let panel = crate::panels::lookup(stock_panel(id)?)?;
@@ -210,6 +219,10 @@ fn shell_call(args: &[String], method: &str) -> Option<String> {
 /// Runs on the UI thread. `Some(output)` if the call was ours.
 fn handle(fields: &[String]) -> Option<String> {
     let [target, method, args @ ..] = fields else { return None };
+    let hooks = CALL_HOOK.with(|h| h.borrow().clone());
+    if let Some(reply) = hooks.iter().find_map(|h| h(target, method, args)) {
+        return Some(reply);
+    }
     match (target.as_str(), method.as_str()) {
         ("media", m @ ("next" | "previous" | "playPause" | "play" | "pause")) => {
             let action = osd::Action::parse(match m {
@@ -278,7 +291,9 @@ fn notifications(method: &str, args: &[String]) -> Option<String> {
             done(!needle.is_empty() && !hit.is_empty())
         }
         // The history is the list in quick settings.
-        "showHistory" => {
+        // Expanding the stack and driving the cards from the keyboard: the list in quick settings
+        // is where they can be read, opened and dismissed (arrows, Enter).
+        "showHistory" | "keyboard" | "expand" => {
             let output = crate::ipc::focused_output()?;
             let panel = crate::panels::lookup("quick-settings")?;
             crate::panels::open(&output, panel);
@@ -295,8 +310,6 @@ fn notifications(method: &str, args: &[String]) -> Option<String> {
             server.set_do_not_disturb(matches!(v.as_str(), "true" | "1" | "on" | "yes"));
             Some(if server.do_not_disturb() { "on" } else { "off" }.to_owned())
         }
-        // Keyboard control of the cards and expanding the stack have no equivalent here.
-        "keyboard" | "expand" => done(false),
         "ping" | "probe" => Some("ok".to_owned()),
         _ => None,
     }

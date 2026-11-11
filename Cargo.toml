@@ -4,7 +4,7 @@ members = ["crates/shoji-core", "crates/shoji-default", "crates/shoji-bar-4"]
 default-members = ["crates/shoji-bar-4"]
 
 [workspace.package]
-version = "0.9.1"
+version = "0.10.0"
 edition = "2024"
 description = "A Material 3 Expressive desktop shell for ShojiWM, built on AntiWebUI"
 license = "MIT OR Apache-2.0"
