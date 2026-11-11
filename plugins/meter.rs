@@ -22,8 +22,10 @@ struct Run {
     last: Option<Instant>,
     hz: f64,
     pending_mark: String,
-    /// (t_ms, dt_ms, mark)
-    frames: Vec<(f64, f64, String)>,
+    /// (t_ms, dt_ms, cpu_ms, wait_ms, mark): `cpu_ms` is what the UI thread was on a CPU for
+    /// since the frame before, `wait_ms` how long it was ready to run and not given one.
+    frames: Vec<(f64, f64, f64, f64, String)>,
+    last_sched: Option<(u64, u64)>,
 }
 
 thread_local! {
@@ -63,6 +65,13 @@ fn start(hz: f64) {
     }
 }
 
+/// (on-CPU ns, run-queue wait ns) of this thread, from the kernel's scheduler statistics.
+fn schedstat() -> Option<(u64, u64)> {
+    let text = fs::read_to_string("/proc/thread-self/schedstat").ok()?;
+    let mut w = text.split_whitespace();
+    Some((w.next()?.parse().ok()?, w.next()?.parse().ok()?))
+}
+
 fn tick(now: Instant) {
     let go = RUN.with(|r| {
         let mut r = r.borrow_mut();
@@ -74,7 +83,15 @@ fn tick(now: Instant) {
             let dt = now.duration_since(last).as_secs_f64() * 1000.0;
             let t = now.duration_since(start).as_secs_f64() * 1000.0;
             let mark = std::mem::take(&mut r.pending_mark);
-            r.frames.push((t, dt, mark));
+            let now_sched = schedstat();
+            let (cpu, wait) = match (r.last_sched, now_sched) {
+                (Some(a), Some(b)) => ((b.0 - a.0) as f64 / 1e6, (b.1 - a.1) as f64 / 1e6),
+                _ => (0.0, 0.0),
+            };
+            r.last_sched = now_sched;
+            r.frames.push((t, dt, cpu, wait, mark));
+        } else {
+            r.last_sched = schedstat();
         }
         r.last = Some(now);
         true
@@ -98,9 +115,9 @@ fn stop() {
     }
     let Some(dir) = dir() else { return };
     let _ = fs::create_dir_all(&dir);
-    let mut csv = String::from("t_ms,dt_ms,mark\n");
-    for (t, dt, m) in &run.frames {
-        let _ = writeln!(csv, "{t:.2},{dt:.2},{m}");
+    let mut csv = String::from("t_ms,dt_ms,cpu_ms,wait_ms,mark\n");
+    for (t, dt, cpu, wait, m) in &run.frames {
+        let _ = writeln!(csv, "{t:.2},{dt:.3},{cpu:.3},{wait:.3},{m}");
     }
     let _ = fs::write(dir.join("fps.csv"), csv);
 
@@ -125,7 +142,7 @@ fn stop() {
     );
     // By stretch: from each mark to the next.
     let mut stretches: Vec<(String, Vec<f64>)> = Vec::new();
-    for (_, dt, mark) in &run.frames {
+    for (_, dt, _, _, mark) in &run.frames {
         if !mark.is_empty() || stretches.is_empty() {
             stretches.push((mark.clone(), Vec::new()));
         }

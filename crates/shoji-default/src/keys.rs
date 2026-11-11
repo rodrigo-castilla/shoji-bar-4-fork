@@ -64,10 +64,33 @@ fn lua(to_command: bool) -> String {
 }
 
 /// Binds the keys to the commands. Off the UI thread: `hyprctl` is slow.
+///
+/// Hyprland forgets runtime binds whenever the configuration is reloaded (a theme change, a
+/// `hyprctl reload`...), which would hand the keys back to the global shortcuts, so the same thread
+/// listens to its event socket and binds them again after every `configreloaded`.
 pub fn take() {
-    let _ = std::thread::Builder::new()
-        .name("shoji-bar-4 keys".into())
-        .spawn(|| eval(&lua(true)));
+    let _ = std::thread::Builder::new().name("shoji-bar-4 keys".into()).spawn(|| {
+        eval(&lua(true));
+        watch_reloads();
+    });
+}
+
+fn watch_reloads() {
+    use std::io::{BufRead, BufReader};
+    let (Ok(runtime), Ok(sig)) = (std::env::var("XDG_RUNTIME_DIR"), std::env::var("HYPRLAND_INSTANCE_SIGNATURE"))
+    else {
+        return;
+    };
+    let Ok(stream) = std::os::unix::net::UnixStream::connect(format!("{runtime}/hypr/{sig}/.socket2.sock")) else {
+        return;
+    };
+    for line in BufReader::new(stream).lines().map_while(Result::ok) {
+        if line.starts_with("configreloaded") {
+            // The reload finishes binding a moment after the event.
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            eval(&lua(true));
+        }
+    }
 }
 
 /// Puts the global shortcuts back.
