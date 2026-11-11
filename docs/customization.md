@@ -21,6 +21,7 @@ What the binary shows is decided when it is built, by what the plugins directory
 If both files exist, `init.rs` wins and the build prints a warning. A file only counts if it defines its function (`init` or `patch`) outside of comments, so commenting a plugin out entirely brings back the stock interface (with a warning).
 
 The plugins directory is `plugins/` at the root of the project, next to the top-level `Cargo.toml`
+(in the fork it is a symlink to `crates/shoji-bar-4/plugins/`, so that rust-analyzer sees the files)
 (or `$SHOJI_PLUGINS_DIR`, if you set it). The build creates it if it does not exist. It is yours.
 In the fork's repository it holds the author's own plugins, as a real example (see
 [Example plugins](#example-plugins)); in a project of your own, leave it out of version control.

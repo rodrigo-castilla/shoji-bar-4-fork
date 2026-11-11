@@ -22,6 +22,11 @@ Some features call external tools: `grim` (translucent ink), `wl-paste`, `setpri
 - `docs/architecture.md`: a reading guide to the code (entry point, startup, rendering, panels, theme,
   outside channels).
 
+### Fixed
+- rust-analyzer (hover, docs, go-to-definition) now works in the plugins: they live in
+  `crates/shoji-bar-4/plugins/` (inside the package, where rust-analyzer looks) and `plugins/` at the
+  root is a symlink to it. `build.rs` names the plugin modules by their real path.
+
 ## [0.4.0] - 2026-11-11 (pre-release)
 
 Everything added on top of 0.3.0: the shell can now be the only bar of an Omarchy session, answering

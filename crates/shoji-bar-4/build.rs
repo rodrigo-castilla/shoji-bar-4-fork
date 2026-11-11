@@ -114,6 +114,13 @@ fn main() {
     };
     let init = dir.join("init.rs");
     let init_default = dir.join("init-default.rs");
+    // The modules are named by the directory's real path. The plugins live inside this package
+    // (`crates/shoji-bar-4/plugins`, with `plugins/` at the root a symlink to it) because
+    // rust-analyzer only loads the files under the directory of a package: with the plugins outside
+    // it, they get no completion, hover or go-to-definition. neovim resolves the symlink too, so the
+    // file the editor opens is the one rust-analyzer knows. For the compiler, a path is a path.
+    let real = fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
+    let (init_view, init_default_view) = (real.join("init.rs"), real.join("init-default.rs"));
     let use_init = usable(&init, "init");
     let use_init_default = usable(&init_default, "patch");
     let (source, code) = if use_init {
@@ -124,7 +131,7 @@ fn main() {
             init.display().to_string(),
             format!(
                 "{}\npub fn run() {{\n    shoji_default::run_custom(init::init);\n}}\n",
-                module("init", &init)
+                module("init", &init_view)
             ),
         )
     } else if use_init_default {
@@ -132,7 +139,7 @@ fn main() {
             init_default.display().to_string(),
             format!(
                 "{}\npub fn run() {{\n    shoji_default::run_with(init_default::patch);\n}}\n",
-                module("init_default", &init_default)
+                module("init_default", &init_default_view)
             ),
         )
     } else {
