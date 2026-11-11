@@ -498,8 +498,11 @@ fn content(_output: Output) -> Div {
 }
 
 fn card() -> Div {
+    // As wide as what is in it needs, never narrower than WIDTH nor wider than the screen leaves
+    // (the rows do not cut their text: they make the card grow, up to the limit).
     div()
-        .w(WIDTH)
+        .min_w(WIDTH)
+        .max_w(pct(94.0))
         .flex()
         .flex_col()
         .gap(8.0_f32)

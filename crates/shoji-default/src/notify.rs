@@ -94,9 +94,6 @@ fn kb_key(server: &NotificationServer, key: &Key) {
         return;
     };
     let me = cards[at].clone();
-    let actions = |n: &Notification| -> Vec<String> {
-        n.actions.iter().filter(|a| a.0 != "default").map(|a| a.0.clone()).collect()
-    };
     match key {
         Key::Named(NamedKey::Escape) => keyboard_stop(),
         Key::Named(NamedKey::ArrowDown | NamedKey::Tab) => {
@@ -113,11 +110,7 @@ fn kb_key(server: &NotificationServer, key: &Key) {
         }
         Key::Named(NamedKey::Enter) => {
             keyboard_stop();
-            let key = me.actions.iter().find(|a| a.0 == "default").map(|a| a.0.clone()).or_else(|| actions(&me).first().cloned());
-            match key {
-                Some(key) => me.invoke(&key),
-                None => me.dismiss(),
-            }
+            activate(&me);
         }
         Key::Named(NamedKey::Delete | NamedKey::Backspace) => {
             // The next one down (or the one above) takes the selection.
@@ -130,13 +123,97 @@ fn kb_key(server: &NotificationServer, key: &Key) {
         }
         Key::Character(c) => {
             if let Some(n) = c.parse::<usize>().ok().filter(|n| *n >= 1) {
-                if let Some(key) = actions(&me).get(n - 1) {
+                if let Some(deed) = deeds(&me).get(n - 1) {
                     keyboard_stop();
-                    me.invoke(key);
+                    press(&me, deed);
                 }
             }
         }
         _ => {}
+    }
+}
+
+/// A button of a card: an action the program offers (answered over D-Bus), or a command Omarchy's
+/// notifications carry in the `omarchy-actions` hint (at most three), run by the shell.
+#[derive(Clone)]
+pub enum Deed {
+    Action(String, String),
+    Exec(String, Vec<String>),
+}
+
+impl Deed {
+    pub fn label(&self) -> &str {
+        match self {
+            Deed::Action(_, l) | Deed::Exec(l, _) => l,
+        }
+    }
+}
+
+fn argv_of(json: &serde_json::Value) -> Option<Vec<String>> {
+    let argv: Vec<String> = json.as_array()?.iter().filter_map(|a| a.as_str().map(str::to_owned)).collect();
+    (!argv.is_empty()).then_some(argv)
+}
+
+/// What clicking the card runs by itself: the `omarchy-exec-argv` hint.
+fn click_argv(n: &Notification) -> Option<Vec<String>> {
+    argv_of(&serde_json::from_str(&n.exec_argv).ok()?)
+}
+
+/// The buttons of a card, in the order they are drawn and numbered.
+pub fn deeds(n: &Notification) -> Vec<Deed> {
+    let mut out: Vec<Deed> =
+        n.actions.iter().filter(|a| a.0 != "default").map(|a| Deed::Action(a.0.clone(), a.1.clone())).collect();
+    if let Ok(serde_json::Value::Array(list)) = serde_json::from_str::<serde_json::Value>(&n.exec_actions) {
+        for item in list.iter().take(3) {
+            if let (Some(label), Some(argv)) = (item["label"].as_str(), argv_of(&item["argv"])) {
+                out.push(Deed::Exec(label.to_owned(), argv));
+            }
+        }
+    }
+    out
+}
+
+/// Starts a command apart from the shell, which it may outlive.
+fn run(argv: &[String]) {
+    let _ = std::process::Command::new("setsid")
+        .arg("-f")
+        .args(argv)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|mut c| std::thread::spawn(move || c.wait()));
+}
+
+/// Presses a button.
+pub fn press(n: &Notification, deed: &Deed) {
+    match deed {
+        Deed::Action(key, _) => n.invoke(key),
+        Deed::Exec(_, argv) => {
+            run(argv);
+            if !n.resident {
+                n.dismiss();
+            }
+        }
+    }
+}
+
+/// What clicking a card does, as Omarchy's shell does: the command it carries, else the program's
+/// `default` action, else bringing the program's window forward; and if it offers only buttons
+/// (a screenshot's Open and Edit), the first one. The card goes either way.
+pub fn activate(n: &Notification) {
+    if let Some(argv) = click_argv(n) {
+        run(&argv);
+        n.dismiss();
+    } else if n.actions.iter().any(|a| a.0 == "default") {
+        n.invoke("default");
+    } else if let Some(first) = deeds(n).first() {
+        press(n, first);
+    } else {
+        if !n.app_name.is_empty() && n.app_name != "notify-send" {
+            run(&["omarchy-hyprland-focus-app".to_owned(), n.app_name.clone()]);
+        }
+        n.dismiss();
     }
 }
 
@@ -295,36 +372,31 @@ pub fn card(n: Notification, popup: bool) -> Div {
     let app = n.app_name.clone();
     let gone = n.clone();
     let default = n.clone();
-    let has_default = n.actions.iter().any(|(k, _)| k == "default");
     let mut actions = div().flex().flex_row().gap(8.0_f32).pt(4.0_f32);
     let mut any_action = false;
     let id = n.id;
     let selected = memo(move || popup && kb().0.get() && kb().1.get() == id);
     let mut number = 0;
-    for (key, label) in n.actions.clone() {
-        if key == "default" {
-            continue;
-        }
+    for deed in deeds(&n) {
         any_action = true;
         number += 1;
-        let (n, key2) = (n.clone(), key.clone());
-        let (n2, label2) = (n.clone(), label.clone());
-        let numbered = format!("{number}  {label}");
+        let numbered = format!("{number}  {}", deed.label());
+        let (plain, (n1, d1), (n2, d2)) = (deed.label().to_owned(), (n.clone(), deed.clone()), (n.clone(), deed));
         actions = actions
             .child(show(
                 move || selected.get(),
                 move || {
-                    let (n, key) = (n.clone(), key.clone());
+                    let (n, d) = (n1.clone(), d1.clone());
                     styled_button(numbered.clone(), ButtonStyle::tonal().size(ButtonSize::ExtraSmall))
-                        .on_click(move |_| { n.invoke(&key); })
+                        .on_click(move |_| press(&n, &d))
                 },
             ))
             .child(show(
                 move || !selected.get(),
                 move || {
-                    let (n, key) = (n2.clone(), key2.clone());
-                    styled_button(label2.clone(), ButtonStyle::tonal().size(ButtonSize::ExtraSmall))
-                        .on_click(move |_| { n.invoke(&key); })
+                    let (n, d) = (n2.clone(), d2.clone());
+                    styled_button(plain.clone(), ButtonStyle::tonal().size(ButtonSize::ExtraSmall))
+                        .on_click(move |_| press(&n, &d))
                 },
             ));
     }
@@ -339,11 +411,7 @@ pub fn card(n: Notification, popup: bool) -> Div {
         .overflow_hidden()
         .shadows(if popup { elevation(3) } else { Vec::new() })
         .on_hover(move |h| hovered.set(h))
-        .on_click(move |_| {
-            if has_default {
-                default.invoke("default");
-            }
-        })
+        .on_click(move |_| activate(&default))
         .dyn_style(move |s| {
             let c = colors();
             if selected.get() {

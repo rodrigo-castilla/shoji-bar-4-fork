@@ -17,7 +17,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-patch_file=$root/patches/antiwebui-ui-zoom.patch
+patch_files=("$root"/patches/*.patch)
 dest=${SHOJI_ANTIWEBUI_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/shoji-bar-4/AntiWebUI}
 
 # Once cargo builds against the copy it rewrites Cargo.lock for this machine, so read the revision
@@ -36,7 +36,7 @@ rm -rf "$dest"
 mkdir -p "$(dirname "$dest")"
 cp -r "$checkout" "$dest"
 chmod -R u+w "$dest"
-patch -d "$dest" -p1 --quiet <"$patch_file"
+for p in "${patch_files[@]}"; do patch -d "$dest" -p1 --quiet <"$p"; done
 echo "patched AntiWebUI ${rev:0:7} at $dest"
 
 # Every crate of the AntiWebUI workspace has to come from the copy, or cargo would mix two of them.

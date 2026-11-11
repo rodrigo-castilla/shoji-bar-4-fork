@@ -1,0 +1,33 @@
+diff --git i/src/anti-webui-wayland-shell/src/notifications.rs w/src/anti-webui-wayland-shell/src/notifications.rs
+index 6841a11..ee6b141 100644
+--- i/src/anti-webui-wayland-shell/src/notifications.rs
++++ w/src/anti-webui-wayland-shell/src/notifications.rs
+@@ -64,6 +64,10 @@ pub struct Notification {
+     pub transient: bool,
+     /// The program's `.desktop` file, without `.desktop`.
+     pub desktop_entry: Option<String>,
++    /// The `omarchy-exec-argv` hint, as sent (a JSON array): what clicking runs.
++    pub exec_argv: String,
++    /// The `omarchy-actions` hint, as sent (a JSON array of `{label, argv}`): buttons that run a command.
++    pub exec_actions: String,
+     received: Instant,
+ }
+ 
+@@ -85,6 +89,8 @@ impl PartialEq for Notification {
+             && self.resident == other.resident
+             && self.transient == other.transient
+             && self.desktop_entry == other.desktop_entry
++            && self.exec_argv == other.exec_argv
++            && self.exec_actions == other.exec_actions
+     }
+ }
+ 
+@@ -399,6 +405,8 @@ impl Daemon {
+             resident: get(&hints, "resident").unwrap_or(false),
+             transient: get(&hints, "transient").unwrap_or(false),
+             desktop_entry: get::<String>(&hints, "desktop-entry").filter(|d| !d.is_empty()),
++            exec_argv: string(&hints, "omarchy-exec-argv"),
++            exec_actions: string(&hints, "omarchy-actions"),
+             received: Instant::now(),
+         });
+         id

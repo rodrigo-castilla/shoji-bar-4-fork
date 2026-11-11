@@ -45,7 +45,11 @@ audio/network/bluetooth/monitor/power panels (mapped to the clipboard, calendar 
 Done in 0.10.0: the image picker (`plugins/image_picker.rs`): `omarchy-shell image-selector open ...`
 (what `omarchy-menu-images` and the Background row use, so `Super+Ctrl+Space`) and
 `shell summon omarchy.image-picker '{"source":"themes"}'` (the Theme row, applied with
-`omarchy-theme-set`). Arrows, Enter, Escape, search, click. `notifications.expand` opens the list in quick settings, as `showHistory` does.
+`omarchy-theme-set`). Arrows, Enter, Escape, search, click. Clicking a card (0.12.0) does what Omarchy's does: runs the `omarchy-exec-argv` hint, else the `default`
+action, else the first button, else brings the app forward; the `omarchy-actions` hint (a screenshot's Open
+and Edit) shows as buttons. That needs `patches/antiwebui-notification-exec.patch` (two hint fields on
+`Notification`; `scripts/apply-antiwebui-patch.sh` applies every patch).
+`notifications.expand` opens the list in quick settings, as `showHistory` does.
 `notifications.keyboard` (0.11.0) is the real keyboard mode: the popups take the keyboard, the newest
 card is selected; Down/J/Tab and Up/K move, a number presses that button (the buttons of the selected
 card are numbered), Enter clicks the card, Delete/Backspace dismisses it, Escape or ten idle seconds

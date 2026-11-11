@@ -257,19 +257,8 @@ fn notifications(method: &str, args: &[String]) -> Option<String> {
     let on_screen = server.popups();
     let newest = on_screen.first();
     let done = |yes: bool| Some(if yes { "ok" } else { "none" }.to_owned());
-    // What clicking the card does: its default action, else its only one, else its first.
-    let click = |n: &anti_webui::shell::Notification| {
-        let key = n
-            .actions
-            .iter()
-            .find(|a| a.0 == "default")
-            .or_else(|| n.actions.first())
-            .map(|a| a.0.clone());
-        match key {
-            Some(key) => n.invoke(&key),
-            None => n.dismiss(),
-        }
-    };
+    // What clicking the card does.
+    let click = |n: &anti_webui::shell::Notification| crate::notify::activate(n);
     match method {
         // Dismiss, press the one button on, or click the newest card.
         "act" | "invokeLast" => newest.map(|n| click(n)).map_or_else(|| done(false), |()| done(true)),
@@ -280,8 +269,9 @@ fn notifications(method: &str, args: &[String]) -> Option<String> {
         }
         "invokeAction" => {
             let n: usize = args.first()?.trim().parse().ok()?;
-            let action = newest?.actions.get(n.checked_sub(1)?)?.0.clone();
-            newest?.invoke(&action);
+            let newest = newest?;
+            let deed = crate::notify::deeds(newest).get(n.checked_sub(1)?)?.clone();
+            crate::notify::press(newest, &deed);
             done(true)
         }
         "dismiss" => {
