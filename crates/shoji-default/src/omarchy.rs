@@ -55,17 +55,19 @@ fn aside(path: &PathBuf) -> PathBuf {
     path.with_file_name(name)
 }
 
-/// Gives the socket back to Quickshell.
+/// Gives the socket back to Quickshell, or removes ours if there was none to give back to.
 pub fn release() {
     let Some(path) = socket() else { return };
     let kept = aside(&path);
+    let _ = std::fs::remove_file(&path);
     if kept.exists() {
-        let _ = std::fs::remove_file(&path);
         let _ = std::fs::rename(&kept, &path);
     }
 }
 
-/// Takes the socket over. Call once, from the root, after what answers has been installed.
+/// Takes the socket over. Call once, from the root, after what answers has been installed. With
+/// Quickshell running its socket is moved aside and calls we do not answer are passed on to it;
+/// without it (the shell that Omarchy talks to is this one) the socket is ours alone.
 pub fn serve() {
     let Some(path) = socket() else { return };
     let kept = aside(&path);
@@ -73,12 +75,14 @@ pub fn serve() {
     if kept.exists() && UnixStream::connect(&path).is_err() {
         release();
     }
-    // Nothing of Quickshell's to take over (it is not running, or its socket is not there).
-    if !path.exists() || kept.exists() || UnixStream::connect(&path).is_err() {
-        return;
-    }
-    if std::fs::rename(&path, &kept).is_err() {
-        return;
+    let quickshell = path.exists() && UnixStream::connect(&path).is_ok();
+    if quickshell {
+        if kept.exists() || std::fs::rename(&path, &kept).is_err() {
+            return;
+        }
+    } else {
+        // A socket nobody listens on, or none.
+        let _ = std::fs::remove_file(&path);
     }
     let listener = match UnixListener::bind(&path) {
         Ok(l) => l,
