@@ -18,6 +18,10 @@ Some features call external tools: `grim` (translucent ink), `wl-paste`, `setpri
 
 ## [Unreleased]
 
+### Added
+- `docs/architecture.md`: a reading guide to the code (entry point, startup, rendering, panels, theme,
+  outside channels).
+
 ## [0.4.0] - 2026-11-11 (pre-release)
 
 Everything added on top of 0.3.0: the shell can now be the only bar of an Omarchy session, answering
