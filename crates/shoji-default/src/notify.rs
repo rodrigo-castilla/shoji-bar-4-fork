@@ -9,7 +9,7 @@ use anti_webui::shell::Urgency;
 use anti_webui::shell::prelude::*;
 use anti_webui_md3e::components::{ButtonSize, ButtonStyle, styled_button};
 use anti_webui_md3e::icons;
-use std::cell::OnceCell;
+use std::cell::{Cell, OnceCell};
 
 thread_local! {
     static SERVER: OnceCell<Option<NotificationServer>> = const { OnceCell::new() };
@@ -29,6 +29,117 @@ pub fn server() -> Option<NotificationServer> {
     })
 }
 
+thread_local! {
+    /// Keyboard mode (`omarchy-shell notifications keyboard`): the popups take the keyboard, one card
+    /// is selected. Arrows (or J/K, Tab) move, a number presses that button, Enter clicks the card,
+    /// Delete dismisses it, Escape (or ten idle seconds) gives the keyboard back.
+    static KB: Cell<Option<(Signal<bool>, Signal<u32>)>> = const { Cell::new(None) };
+    static KB_IDLE: std::cell::RefCell<Option<Timeout>> = const { std::cell::RefCell::new(None) };
+    static KB_FOCUS: Cell<Option<NodeRef>> = const { Cell::new(None) };
+}
+
+/// The signals of keyboard mode, made on first use (on the UI thread).
+fn kb() -> (Signal<bool>, Signal<u32>) {
+    KB.with(|k| match k.get() {
+        Some(pair) => pair,
+        None => {
+            let pair = (signal(false), signal(0u32));
+            k.set(Some(pair));
+            pair
+        }
+    })
+}
+
+/// Starts keyboard mode on the newest card. `false` when there is no card on the screen.
+pub fn keyboard_start() -> bool {
+    let Some(server) = server() else { return false };
+    let Some(first) = server.popups().first().map(|n| n.id) else { return false };
+    let (on, sel) = kb();
+    sel.set(first);
+    on.set(true);
+    kb_idle();
+    if let Some(node) = KB_FOCUS.with(|f| f.get()) {
+        request_frame(move |_| node.focus());
+    }
+    true
+}
+
+pub fn keyboard_stop() {
+    let (on, _) = kb();
+    on.set(false);
+    KB_IDLE.with(|t| {
+        if let Some(t) = t.borrow_mut().take() {
+            t.cancel();
+        }
+    });
+}
+
+fn kb_idle() {
+    KB_IDLE.with(|t| {
+        if let Some(old) = t.borrow_mut().take() {
+            old.cancel();
+        }
+        *t.borrow_mut() = Some(set_timeout(std::time::Duration::from_secs(10), keyboard_stop));
+    });
+}
+
+/// What a key does in keyboard mode.
+fn kb_key(server: &NotificationServer, key: &Key) {
+    let (_, sel) = kb();
+    kb_idle();
+    let cards: Vec<Notification> = server.popups().into_iter().take(MAX_POPUPS).collect();
+    let at = cards.iter().position(|n| n.id == sel.get_untracked());
+    let Some(at) = at else {
+        keyboard_stop();
+        return;
+    };
+    let me = cards[at].clone();
+    let actions = |n: &Notification| -> Vec<String> {
+        n.actions.iter().filter(|a| a.0 != "default").map(|a| a.0.clone()).collect()
+    };
+    match key {
+        Key::Named(NamedKey::Escape) => keyboard_stop(),
+        Key::Named(NamedKey::ArrowDown | NamedKey::Tab) => {
+            if let Some(n) = cards.get(at + 1) { sel.set(n.id) }
+        }
+        Key::Character(c) if c == "j" => {
+            if let Some(n) = cards.get(at + 1) { sel.set(n.id) }
+        }
+        Key::Named(NamedKey::ArrowUp) => {
+            if at > 0 { sel.set(cards[at - 1].id) }
+        }
+        Key::Character(c) if c == "k" => {
+            if at > 0 { sel.set(cards[at - 1].id) }
+        }
+        Key::Named(NamedKey::Enter) => {
+            keyboard_stop();
+            let key = me.actions.iter().find(|a| a.0 == "default").map(|a| a.0.clone()).or_else(|| actions(&me).first().cloned());
+            match key {
+                Some(key) => me.invoke(&key),
+                None => me.dismiss(),
+            }
+        }
+        Key::Named(NamedKey::Delete | NamedKey::Backspace) => {
+            // The next one down (or the one above) takes the selection.
+            if let Some(n) = cards.get(at + 1).or_else(|| at.checked_sub(1).and_then(|i| cards.get(i))) {
+                sel.set(n.id);
+            } else {
+                keyboard_stop();
+            }
+            me.dismiss();
+        }
+        Key::Character(c) => {
+            if let Some(n) = c.parse::<usize>().ok().filter(|n| *n >= 1) {
+                if let Some(key) = actions(&me).get(n - 1) {
+                    keyboard_stop();
+                    me.invoke(key);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 const WIDTH: f32 = 352.0;
 /// At most this many pop up at once, the newest; the rest are in quick settings.
 const MAX_POPUPS: usize = 3;
@@ -39,6 +150,8 @@ const LAYER_HEIGHT: i32 = 560;
 /// The popups, on the first output. Call once, from the root.
 pub fn open_popups() {
     let Some(server) = server() else { return };
+    // Made here, in the root, so that they outlive any card that reads them.
+    kb();
     let any = memo({
         let server = server.clone();
         move || !server.popups().is_empty()
@@ -83,14 +196,28 @@ pub fn open_popups() {
                 .namespace("shoji-bar-4-notifications"),
             move || popups(server.clone(), region),
         );
-        effect(move || layer.set_input_region(region.get()));
+        let (on, _) = kb();
+        effect(move || {
+            layer.set_input_region(region.get());
+            layer.set_keyboard(if on.get() { Keyboard::Exclusive } else { Keyboard::None });
+        });
     });
 }
 
 /// The cards, newest on top. Those below make room for a new one and close up after one that
 /// goes, sliding to their places; `region` follows where the cards are.
 pub fn popups(server: NotificationServer, region: Signal<InputRegion>) -> Div {
+    let node = node_ref();
+    KB_FOCUS.with(|f| f.set(Some(node)));
+    let key_server = server.clone();
     div()
+        .node_ref(node)
+        .focusable()
+        .on_key_down(move |e| {
+            if kb().0.get_untracked() {
+                kb_key(&key_server, &e.key);
+            }
+        })
         .flex()
         .flex_col()
         .p(14.0_f32)
@@ -171,19 +298,35 @@ pub fn card(n: Notification, popup: bool) -> Div {
     let has_default = n.actions.iter().any(|(k, _)| k == "default");
     let mut actions = div().flex().flex_row().gap(8.0_f32).pt(4.0_f32);
     let mut any_action = false;
+    let id = n.id;
+    let selected = memo(move || popup && kb().0.get() && kb().1.get() == id);
+    let mut number = 0;
     for (key, label) in n.actions.clone() {
         if key == "default" {
             continue;
         }
         any_action = true;
-        let n = n.clone();
-        actions = actions.child(
-            styled_button(label, ButtonStyle::tonal().size(ButtonSize::ExtraSmall)).on_click(
-                move |_| {
-                    n.invoke(&key);
+        number += 1;
+        let (n, key2) = (n.clone(), key.clone());
+        let (n2, label2) = (n.clone(), label.clone());
+        let numbered = format!("{number}  {label}");
+        actions = actions
+            .child(show(
+                move || selected.get(),
+                move || {
+                    let (n, key) = (n.clone(), key.clone());
+                    styled_button(numbered.clone(), ButtonStyle::tonal().size(ButtonSize::ExtraSmall))
+                        .on_click(move |_| { n.invoke(&key); })
                 },
-            ),
-        );
+            ))
+            .child(show(
+                move || !selected.get(),
+                move || {
+                    let (n, key) = (n2.clone(), key2.clone());
+                    styled_button(label2.clone(), ButtonStyle::tonal().size(ButtonSize::ExtraSmall))
+                        .on_click(move |_| { n.invoke(&key); })
+                },
+            ));
     }
     let hovered = signal(false);
     let mut body = div()
@@ -203,7 +346,9 @@ pub fn card(n: Notification, popup: bool) -> Div {
         })
         .dyn_style(move |s| {
             let c = colors();
-            if urgent {
+            if selected.get() {
+                s.bg(c.primary_container).text_color(c.on_primary_container)
+            } else if urgent {
                 s.bg(c.error_container).text_color(c.on_error_container)
             } else if popup {
                 s.bg(c.surface_container_high).text_color(c.on_surface)

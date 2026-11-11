@@ -45,8 +45,11 @@ audio/network/bluetooth/monitor/power panels (mapped to the clipboard, calendar 
 Done in 0.10.0: the image picker (`plugins/image_picker.rs`): `omarchy-shell image-selector open ...`
 (what `omarchy-menu-images` and the Background row use, so `Super+Ctrl+Space`) and
 `shell summon omarchy.image-picker '{"source":"themes"}'` (the Theme row, applied with
-`omarchy-theme-set`). Arrows, Enter, Escape, search, click. `notifications.keyboard` and `expand` open
-the list in quick settings, as `showHistory` does.
+`omarchy-theme-set`). Arrows, Enter, Escape, search, click. `notifications.expand` opens the list in quick settings, as `showHistory` does.
+`notifications.keyboard` (0.11.0) is the real keyboard mode: the popups take the keyboard, the newest
+card is selected; Down/J/Tab and Up/K move, a number presses that button (the buttons of the selected
+card are numbered), Enter clicks the card, Delete/Backspace dismisses it, Escape or ten idle seconds
+give the keyboard back.
 
 Not yet: emojis (`omarchy.emojis`), reminders (`omarchy-reminder`), translations of the menu
 (`~/.config/omarchy/language`), `--on-change` live selects, and the rest of the plugin panels

@@ -293,7 +293,8 @@ fn notifications(method: &str, args: &[String]) -> Option<String> {
         // The history is the list in quick settings.
         // Expanding the stack and driving the cards from the keyboard: the list in quick settings
         // is where they can be read, opened and dismissed (arrows, Enter).
-        "showHistory" | "keyboard" | "expand" => {
+        "keyboard" => done(crate::notify::keyboard_start()),
+        "showHistory" | "expand" => {
             let output = crate::ipc::focused_output()?;
             let panel = crate::panels::lookup("quick-settings")?;
             crate::panels::open(&output, panel);
