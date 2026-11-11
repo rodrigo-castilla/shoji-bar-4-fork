@@ -180,9 +180,14 @@ workspace manifest.
 interface, whichever one it is. It is read as the shell starts, and it needs AntiWebUI with a small
 patch: see [UI zoom](development.md#ui-zoom).
 
-### Media commands
+### Media commands and Omarchy's calls
 
 `shoji-bar-4 msg media next|previous|play-pause|play|pause` does that to the current player and
-shows a pill (the icon of the action and "title · artist"); a track that changes by itself shows
-the pill too. To use them for the media keys, point the bindings at it, e.g.
-`o.bind("XF86AudioNext", "Next track", "shoji-bar-4 msg media next", { locked = true })`.
+shows a pill (the icon of the action and "title · artist"). A track that ends by itself shows no
+pill.
+
+While the shell runs it also answers what Omarchy sends to its own shell (`omarchy-shell media next`,
+`omarchy-osd -i keyboard -p 50`, ...): `crates/shoji-default/src/omarchy.rs` takes the shell's
+socket over, does `media.*` and `osd.show` itself, and passes every other call on to Quickshell.
+Bindings that Omarchy makes global shortcuts (the default media, volume and brightness keys) still
+go to Quickshell: write them as commands (`omarchy-shell media next`) to reach this shell.

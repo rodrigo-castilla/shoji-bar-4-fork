@@ -7,6 +7,26 @@ Analysis of what Omarchy does through Quickshell (its bindings are in
 `shoji-bar-4` has to do to answer the same actions when it is the bar in use. Nothing here is
 implemented yet by this branch (`feat/omarchy-actions`): this is the analysis.
 
+### The way it works now (0.7.0): shoji answers in place of Quickshell
+
+`omarchy-shell <target> <method>` (used by the `omarchy-*` commands, by `omarchy-osd`, and by any
+binding written as a command, e.g. `omarchy-shell media next`) writes the call to
+`$XDG_RUNTIME_DIR/omarchy-shell-<md5 of "$OMARCHY_PATH/shell\n$WAYLAND_DISPLAY">.sock` and, on
+`SKIP`, falls back to `qs ipc`. `crates/shoji-default/src/omarchy.rs` moves Quickshell's socket
+aside (`.quickshell`), binds its own, does what it has an answer for (`media.next|previous|
+playPause|play|pause`, `osd.show`) and forwards everything else to Quickshell's socket, relaying its
+reply. On `msg quit` the socket goes back; after a crash the next start repairs it.
+
+Not reached this way: the bindings Omarchy writes as Hyprland **global shortcuts**
+(`hl.dsp.global("omarchy:...")`, for the kinds listed in `/usr/share/omarchy/default/omarchy/shortcuts`:
+menus, panels, `audio.*`, `brightness.*`, `ipc.media.*`, `ipc.notifications.*`), which go to whoever
+registered them, Quickshell. To catch them, `alter-bar` has to rebind those keys to the command form
+(`hl.unbind` + `hl.bind(... "omarchy-shell media next")`, through `hyprctl eval`, nothing written
+to the user's files) while shoji is the bar, and put them back after. Planned for `alter-bar`.
+
+Next on the list to answer here: `notifications.*`, `shell toggle/summon` for the menus and panels,
+`nightlight.*`, `idle.*`, `lock.*`.
+
 ### How Omarchy does it
 
 - Key bindings call one of three things: `{ ipc = "target.method" }` (a call into the running
@@ -43,7 +63,7 @@ implemented yet by this branch (`feat/omarchy-actions`): this is the analysis.
 
 ### To port, by how often they are used
 
-1. **Media: play/pause, next, previous** (DONE in 0.6.0: `msg media ...`, the pill and the track-change pill; what is left is pointing the bindings at it, see below) (`XF86AudioPlay/Pause/Next/Prev`, `Super+XF86AudioRaise/Lower`
+1. **Media: play/pause, next, previous** (DONE in 0.7.0: `omarchy-shell media ...` and `msg media ...` with the pill; a track that ends by itself shows nothing. Left: the global-shortcut bindings, see above) (`XF86AudioPlay/Pause/Next/Prev`, `Super+XF86AudioRaise/Lower`
    for next/previous, `Alt+XF86AudioPlay` next, `Alt+Shift+XF86AudioPlay` previous). Quickshell does
    it through MPRIS; shoji has the MPRIS client (`media()`), so a `msg media next|previous|play-pause`
    is a few lines. Missing: the **OSD for them** (Omarchy's `osd.show` with `media-next`,

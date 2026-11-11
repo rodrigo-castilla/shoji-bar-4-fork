@@ -18,6 +18,7 @@ pub mod launcher;
 pub mod lock;
 pub mod media_panel;
 pub mod notify;
+pub mod omarchy;
 pub mod osd;
 pub mod power_dialog;
 pub mod panels;

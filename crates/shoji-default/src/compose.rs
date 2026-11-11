@@ -14,7 +14,7 @@
 
 use crate::bar::{self, BarLayout};
 use crate::panels::{self, PanelDef, PanelId};
-use crate::{dock, ipc, lock, notify, osd, theme, wallpaper, wm};
+use crate::{dock, ipc, lock, notify, omarchy, osd, theme, wallpaper, wm};
 use anti_webui::shell::prelude::*;
 use std::rc::Rc;
 
@@ -103,6 +103,7 @@ impl Ui {
         }
         if self.services.osd {
             osd::install();
+            omarchy::serve();
         }
         if self.services.lock {
             lock::install();

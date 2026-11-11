@@ -16,6 +16,8 @@ enum Shown {
     Brightness,
     /// The track that plays and what was just done to it.
     Media,
+    /// A message, with a bar if it has a level.
+    Notice,
 }
 
 /// What can be done to the player from outside (`shoji-bar-4 msg media ...`).
@@ -42,9 +44,46 @@ impl Action {
 }
 
 thread_local! {
+    /// Shows the pill for an `omarchy-osd` call: icon, text, level from 0 to 1.
+    static NOTICE_SHOWN: std::cell::RefCell<Option<std::rc::Rc<dyn Fn(&'static Symbol, String, Option<f32>)>>> =
+        const { std::cell::RefCell::new(None) };
     /// Shows the pill for a media action, once `install` has run.
     static MEDIA_SHOWN: std::cell::RefCell<Option<std::rc::Rc<dyn Fn(&'static Symbol)>>> =
         const { std::cell::RefCell::new(None) };
+}
+
+/// What `omarchy-osd` sends: `{icon, message, value, progressText, max, duration}`, as JSON. The
+/// volume and the brightness are shown from their own state, so they are left out here.
+pub fn notice(payload: &str) {
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(payload) else { return };
+    let field = |k: &str| json.get(k).and_then(|v| v.as_str()).unwrap_or("").to_owned();
+    let icon = field("icon").to_lowercase();
+    if icon.starts_with("volume") || matches!(icon.as_str(), "brightness" | "display") {
+        return;
+    }
+    let symbol: &'static Symbol = match icon.as_str() {
+        "microphone" | "mic" => icons::MIC,
+        "microphone-muted" | "microphone-off" | "mic-muted" | "mic-off" => icons::MIC_OFF,
+        "keyboard" => icons::KEYBOARD,
+        "touchpad" => icons::TOUCHPAD_MOUSE,
+        "touch" | "touchscreen" => icons::TOUCH_APP,
+        "reboot" | "restart" => icons::RESTART_ALT,
+        "shutdown" | "power" | "poweroff" => icons::POWER_SETTINGS_NEW,
+        "logout" | "sign-out" | "leave" => icons::LOGOUT,
+        "media-next" | "player-next" => icons::SKIP_NEXT,
+        "media-previous" | "player-previous" => icons::SKIP_PREVIOUS,
+        "media-play" | "player-play" => icons::PLAY_ARROW,
+        "media-pause" | "player-pause" => icons::PAUSE,
+        "media" | "player" | "media-source" | "player-source" => icons::MUSIC_NOTE,
+        _ => icons::INFO,
+    };
+    let number = |k: &str| field(k).trim().parse::<f32>().ok();
+    let level = number("value").map(|v| (v / number("max").unwrap_or(100.0).max(1.0)).clamp(0.0, 1.0));
+    let message = field("message");
+    let text = if message.is_empty() { field("progressText") } else { message };
+    if let Some(f) = NOTICE_SHOWN.with(|m| m.borrow().clone()) {
+        f(symbol, text, level);
+    }
 }
 
 /// Does `action` to the player that is current, and says so in the pill.
@@ -94,59 +133,30 @@ pub fn install() {
             .map(|p| (p.title.clone(), p.artists.join(", ")))
             .unwrap_or_default()
     });
-    let last_action = std::rc::Rc::new(Cell::new(None::<std::time::Instant>));
     {
         let show_for = show_for.clone();
-        let last_action = last_action.clone();
         MEDIA_SHOWN.with(|m| {
             *m.borrow_mut() = Some(std::rc::Rc::new(move |icon| {
-                last_action.set(Some(std::time::Instant::now()));
                 media_icon.set(icon);
                 show_for(Shown::Media);
             }));
         });
     }
-    // A new track, however it came: announced, unless the pill is already there for an action.
-    let last_track = Cell::new(None::<(String, String)>);
+    // What `omarchy-osd` asks for that is not the volume or the brightness.
+    let notice_icon = signal(icons::INFO);
+    let notice_text = signal(String::new());
+    let notice_level = signal(None::<f32>);
     {
         let show_for = show_for.clone();
-        effect(move || {
-            let now = track.get();
-            let before = last_track.replace(Some(now.clone()));
-            if before.is_some_and(|b| b != now) && !now.0.is_empty() {
-                untrack(|| {
-                    let by_action = last_action
-                        .get()
-                        .is_some_and(|t| t.elapsed() < Duration::from_millis(1500));
-                    if !by_action {
-                        media_icon.set(icons::MUSIC_NOTE);
-                    }
-                    show_for(Shown::Media);
-                });
-            }
+        NOTICE_SHOWN.with(|m| {
+            *m.borrow_mut() = Some(std::rc::Rc::new(move |icon, text, level| {
+                notice_icon.set(icon);
+                notice_text.set(text);
+                notice_level.set(level);
+                show_for(Shown::Notice);
+            }));
         });
     }
-    // Not for what is there at the start, nor for another device becoming the default.
-    let last_volume = Cell::new(None::<(i32, bool, u32)>);
-    let on_volume = show_for.clone();
-    effect(move || {
-        let now = volume.get();
-        let before = last_volume.replace(now);
-        if let (Some(b), Some(n)) = (before, now)
-            && b.2 == n.2
-            && (b.0, b.1) != (n.0, n.1)
-        {
-            untrack(|| on_volume(Shown::Volume));
-        }
-    });
-    let last_brightness = Cell::new(None::<i32>);
-    effect(move || {
-        let now = brightness.get();
-        if last_brightness.replace(now).is_some() && now.is_some() {
-            untrack(|| show_for(Shown::Brightness));
-        }
-    });
-
     let visible = memo(move || shown.get().is_some());
     let mounted = signal(false);
     let pending: Cell<Option<Timeout>> = Cell::new(None);
@@ -185,26 +195,19 @@ pub fn install() {
                 .click_through()
                 .namespace("shoji-bar-4-osd"),
             move || {
-                if kind.get_untracked() == Shown::Media {
-                    return div().p(16.0_f32).select_none().child(
-                        show(move || visible.get(), move || media_pill(media_icon, move || track.get()))
-                            .appear()
-                            .enter(|s| s.opacity(0.0_f32).translate_y(40.0_f32).scale(0.8_f32))
-                            .exit(|s| s.opacity(0.0_f32).translate_y(24.0_f32).scale(0.9_f32))
-                            .transition(overshoot(420)),
-                    );
-                }
                 let level = move || match kind.get() {
                     Shown::Volume => volume
                         .get()
                         .map_or(0.0, |v| if v.1 { 0.0 } else { v.0 as f32 / 100.0 }),
                     Shown::Brightness => brightness.get().unwrap_or(0) as f32 / 100.0,
                     Shown::Media => 0.0,
+                    Shown::Notice => notice_level.get().unwrap_or(0.0),
                 };
                 let symbol = move || -> &'static Symbol {
                     match kind.get() {
                         Shown::Brightness => icons::BRIGHTNESS_6,
                         Shown::Media => icons::MUSIC_NOTE,
+                        Shown::Notice => notice_icon.get(),
                         Shown::Volume => match volume.get() {
                             Some(v) if v.1 || v.0 == 0 => icons::VOLUME_OFF,
                             Some(v) if v.0 < 50 => icons::VOLUME_DOWN,
@@ -213,11 +216,23 @@ pub fn install() {
                     }
                 };
                 div().p(16.0_f32).select_none().child(
-                    show(move || visible.get(), move || pill(level, symbol))
-                        .appear()
-                        .enter(|s| s.opacity(0.0_f32).translate_y(40.0_f32).scale(0.8_f32))
-                        .exit(|s| s.opacity(0.0_f32).translate_y(24.0_f32).scale(0.9_f32))
-                        .transition(overshoot(420)),
+                    show(move || visible.get(), move || {
+                        // What it holds follows what was asked for, while the pill is there.
+                        div().child(dyn_view(move || match kind.get() {
+                            Shown::Media => {
+                                media_pill(media_icon, move || track.get()).into_view()
+                            }
+                            Shown::Notice if notice_level.get().is_none() => {
+                                media_pill(notice_icon, move || (notice_text.get(), String::new()))
+                                    .into_view()
+                            }
+                            _ => pill(level, symbol).into_view(),
+                        }))
+                    })
+                    .appear()
+                    .enter(|s| s.opacity(0.0_f32).translate_y(40.0_f32).scale(0.8_f32))
+                    .exit(|s| s.opacity(0.0_f32).translate_y(24.0_f32).scale(0.9_f32))
+                    .transition(overshoot(420)),
                 )
             },
         );
@@ -321,6 +336,8 @@ fn media_pill(
                 .flex_1()
                 .min_w(0.0)
                 .overflow_hidden()
+                .flex()
+                .justify_center()
                 .child(txt(TextStyle::LABEL_LARGE, move || {
                     let (title, by) = track();
                     if by.is_empty() { title } else { format!("{title} · {by}") }
