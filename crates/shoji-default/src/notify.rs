@@ -59,12 +59,15 @@ pub fn open_popups() {
             )));
         }
     });
+    // Made out here, not in the effect: a layout report of a layer that has just gone can still
+    // come, and setting a signal that went with it panics.
+    let region = signal(InputRegion::Empty);
     effect(move || {
         if !mounted.get() {
             return;
         }
         let server = server.clone();
-        let region = signal(InputRegion::Empty);
+        region.set(InputRegion::Empty);
         let layer = open_layer(
             LayerOptions::new()
                 .layer(Layer::Overlay)

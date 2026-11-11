@@ -177,6 +177,71 @@ fn handle(fields: &[String]) -> Option<String> {
             osd::notice(args.first()?);
             Some("ok".into())
         }
+        ("notifications", method) => notifications(method, args),
+        _ => None,
+    }
+}
+
+/// `notifications.*`, on what is on the screen (the cards), as Omarchy's shell does.
+fn notifications(method: &str, args: &[String]) -> Option<String> {
+    let server = crate::notify::server()?;
+    let on_screen = server.popups();
+    let newest = on_screen.first();
+    let done = |yes: bool| Some(if yes { "ok" } else { "none" }.to_owned());
+    // What clicking the card does: its default action, else its only one, else its first.
+    let click = |n: &anti_webui::shell::Notification| {
+        let key = n
+            .actions
+            .iter()
+            .find(|a| a.0 == "default")
+            .or_else(|| n.actions.first())
+            .map(|a| a.0.clone());
+        match key {
+            Some(key) => n.invoke(&key),
+            None => n.dismiss(),
+        }
+    };
+    match method {
+        // Dismiss, press the one button on, or click the newest card.
+        "act" | "invokeLast" => newest.map(|n| click(n)).map_or_else(|| done(false), |()| done(true)),
+        "dismissOne" => newest.map(|n| n.dismiss()).map_or_else(|| done(false), |()| done(true)),
+        "dismissAll" => {
+            server.clear();
+            done(true)
+        }
+        "invokeAction" => {
+            let n: usize = args.first()?.trim().parse().ok()?;
+            let action = newest?.actions.get(n.checked_sub(1)?)?.0.clone();
+            newest?.invoke(&action);
+            done(true)
+        }
+        "dismiss" => {
+            let needle = args.first()?.as_str();
+            let hit: Vec<_> = on_screen.iter().filter(|n| n.summary.contains(needle)).collect();
+            hit.iter().for_each(|n| n.dismiss());
+            done(!needle.is_empty() && !hit.is_empty())
+        }
+        // The history is the list in quick settings.
+        "showHistory" => {
+            let output = crate::ipc::focused_output()?;
+            let panel = crate::panels::lookup("quick-settings")?;
+            crate::panels::open(&output, panel);
+            done(true)
+        }
+        "count" => Some(on_screen.len().to_string()),
+        "isDnd" => Some(if server.do_not_disturb() { "on" } else { "off" }.to_owned()),
+        "toggleDnd" => {
+            server.set_do_not_disturb(!server.do_not_disturb());
+            Some(if server.do_not_disturb() { "on" } else { "off" }.to_owned())
+        }
+        "setDnd" => {
+            let v = args.first()?.to_lowercase();
+            server.set_do_not_disturb(matches!(v.as_str(), "true" | "1" | "on" | "yes"));
+            Some(if server.do_not_disturb() { "on" } else { "off" }.to_owned())
+        }
+        // Keyboard control of the cards and expanding the stack have no equivalent here.
+        "keyboard" | "expand" => done(false),
+        "ping" | "probe" => Some("ok".to_owned()),
         _ => None,
     }
 }

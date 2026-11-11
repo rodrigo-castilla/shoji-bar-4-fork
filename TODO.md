@@ -24,8 +24,14 @@ command Omarchy falls back to (`omarchy-audio-output-volume raise`, `omarchy-bri
 and brightness pills from what the call says (the keys move the physical sink, which is not always
 the default one the pill used to follow).
 
-Still global shortcuts that nobody hears without Quickshell: menus, panels and
-`notifications.*` (`Super+,` and friends). The next step.
+Done in 0.8.0: `notifications.*` answered in `omarchy.rs` (`act`, `invokeLast`, `invokeAction`,
+`dismissOne`, `dismissAll`, `dismiss`, `showHistory` (opens quick settings, where the list is),
+`count`, `isDnd`, `toggleDnd`, `setDnd`), and the four `Super+,` keys rebound in `keys.rs`.
+`notifications.keyboard` and `expand` have no equivalent yet (they answer `none`). Fixed on the way:
+a panic when the popups layer closed while a layout report of it was still coming.
+
+Still global shortcuts that nobody hears without Quickshell: menus (`Super+Space`, ...) and panels.
+The next step.
 
 Not reached this way (before `keys.rs`): the bindings Omarchy writes as Hyprland **global shortcuts**
 (`hl.dsp.global("omarchy:...")`, for the kinds listed in `/usr/share/omarchy/default/omarchy/shortcuts`:
@@ -78,7 +84,7 @@ Next on the list to answer here: `notifications.*`, `shell toggle/summon` for th
    it through MPRIS; shoji has the MPRIS client (`media()`), so a `msg media next|previous|play-pause`
    is a few lines. Missing: the **OSD for them** (Omarchy's `osd.show` with `media-next`,
    `media-pause`, ... icons) and a toast when the **track changes** (the thing asked for first).
-2. **Notifications** (`Super+,` act on the last one, `Super+Alt+,` dismiss last, `Super+Shift+,`
+2. **Notifications** (DONE in 0.8.0 except keyboard control and the toasts replay; `Super+,` act on the last one, `Super+Alt+,` dismiss last, `Super+Shift+,`
    dismiss all, `Super+Ctrl+,` keyboard control, `Super+Shift+Alt+,` history, `Super+Ctrl+Alt+,`
    silence). Needs `notify.rs` to be the daemon (Quickshell has the bus name) or to forward to
    `notifications.*`; then `msg notifications act|dismiss-one|dismiss-all|history|keyboard|dnd`.
