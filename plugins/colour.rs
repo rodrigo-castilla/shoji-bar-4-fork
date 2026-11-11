@@ -17,6 +17,7 @@ use anti_webui_md3e::ColorScheme;
 use shoji_core::settings::{Palette, ThemeMode, settings};
 use shoji_core::theme::{current_seed, scheme_for, set_scheme_override};
 use std::cell::Cell;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -31,7 +32,15 @@ thread_local! {
     static APPLIED: std::cell::RefCell<Option<Entry>> = const { std::cell::RefCell::new(None) };
     /// The blur radius asked of the compositor last.
     static GLASS_RADIUS: Cell<Option<f32>> = const { Cell::new(None) };
+    /// What the sampler sends back to the UI thread: is the backdrop of the bar bright?
+    static BACKDROP: Cell<Option<UiSender<bool>>> = const { Cell::new(None) };
 }
+
+/// Whether the backdrop behind the shell is bright (set from the UI thread only).
+static BRIGHT: AtomicBool = AtomicBool::new(false);
+/// A glass palette is in use: the only time the backdrop is looked at.
+static GLASSY: AtomicBool = AtomicBool::new(false);
+static SAMPLING: AtomicBool = AtomicBool::new(false);
 
 fn sig<T: Clone + 'static>(slot: &'static std::thread::LocalKey<Cell<Option<Signal<T>>>>, init: T) -> Signal<T> {
     slot.with(|s| match s.get() {
@@ -88,6 +97,15 @@ pub fn restore() {
         current().set(p.name.clone());
         apply(&p);
     }
+    BACKDROP.with(|b| b.set(None));
+    let tx = ui_channel::<bool>(|_| {
+        // The ink changed: the palette in use is put in place again with it.
+        if let Some(entry) = APPLIED.with(|a| a.borrow().clone()) {
+            apply(&entry);
+        }
+    });
+    let _ = BACKDROP_TX.set(tx);
+    watch_backdrop();
     poll_command();
 }
 
@@ -280,8 +298,12 @@ fn scheme_of(entry: &Entry) -> ColorScheme {
     let s = settings().get_untracked();
     let seed = entry.seed.unwrap_or_else(|| current_seed(&s));
     let mut scheme = scheme_for(seed, entry.variant.unwrap_or(s.palette), entry.dark);
+    // A glass palette's ink is white, which cannot be read over a bright wallpaper or window: the
+    // whites become dark and the darks light (alpha kept), decided by `sample_backdrop`.
+    let flip = entry.blur > 0.0 && BRIGHT.load(Ordering::Relaxed);
     for (key, c) in &entry.roles {
-        set_role!(scheme, key.as_str(), *c;
+        let c = if flip { flip_ink(*c) } else { *c };
+        set_role!(scheme, key.as_str(), c;
             primary, on_primary, primary_container, on_primary_container,
             secondary, on_secondary, secondary_container, on_secondary_container,
             tertiary, on_tertiary, tertiary_container, on_tertiary_container,
@@ -304,6 +326,98 @@ fn scheme_of(entry: &Entry) -> ColorScheme {
         }
     }
     scheme
+}
+
+fn flip_ink(c: Color) -> Color {
+    let l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    let ink = |v: f32| Color { r: v, g: v, b: v, a: c.a };
+    if l > 0.8 { ink(0.09) } else if l < 0.2 { ink(0.97) } else { c }
+}
+
+/// Mean luminance (0..1) of the strip at the top of the screen, where the bar is, as the compositor
+/// shows it (wallpaper, video, windows). `grim` takes just the strip, already scaled down to a few
+/// hundred pixels, so this costs a screen copy of 40 rows and a loop over ~1000 pixels.
+fn backdrop_luminance() -> Option<f32> {
+    let monitors = std::process::Command::new("hyprctl").args(["monitors", "-j"]).output().ok()?;
+    let json: serde_json::Value = serde_json::from_slice(&monitors.stdout).ok()?;
+    let m = json.as_array()?.iter().find(|m| m["focused"].as_bool() == Some(true)).or(json.get(0))?;
+    let width = (m["width"].as_f64()? / m["scale"].as_f64().unwrap_or(1.0)) as u32;
+    let geometry = format!("{},{} {}x40", m["x"].as_i64()?, m["y"].as_i64()?, width);
+    let out = std::process::Command::new("grim")
+        .args(["-g", &geometry, "-s", "0.25", "-t", "ppm", "-"])
+        .output()
+        .ok()?;
+    let data = &out.stdout;
+    // P6\n<w> <h>\n255\n<rgb...>
+    let mut at = 0;
+    let mut fields = Vec::new();
+    while fields.len() < 4 {
+        while data.get(at)?.is_ascii_whitespace() { at += 1 }
+        let start = at;
+        while !data.get(at)?.is_ascii_whitespace() { at += 1 }
+        fields.push(std::str::from_utf8(&data[start..at]).ok()?.to_owned());
+    }
+    at += 1;
+    let pixels = &data[at..];
+    if pixels.len() < 3 { return None }
+    let sum: u64 = pixels.chunks_exact(3).map(|p| 2126 * p[0] as u64 + 7152 * p[1] as u64 + 722 * p[2] as u64).sum();
+    Some(sum as f32 / (pixels.len() / 3) as f32 / 10000.0 / 255.0)
+}
+
+/// Looks at the backdrop once, off the UI thread, and tells the UI thread when it crosses over
+/// (with a gap between the two thresholds so that it does not flicker around the middle).
+fn sample_backdrop() {
+    if !GLASSY.load(Ordering::Relaxed) || SAMPLING.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    std::thread::spawn(|| {
+        if let Some(l) = backdrop_luminance() {
+            let was = BRIGHT.load(Ordering::Relaxed);
+            let now = if was { l > 0.45 } else { l > 0.58 };
+            if now != was {
+                BRIGHT.store(now, Ordering::Relaxed);
+                if let Some(tx) = BACKDROP_TX.get() { tx.send(now) }
+            }
+        }
+        SAMPLING.store(false, Ordering::Release);
+    });
+}
+
+static BACKDROP_TX: std::sync::OnceLock<UiSender<bool>> = std::sync::OnceLock::new();
+
+/// Re-samples when something that can change the backdrop happens (Hyprland's events: windows
+/// opening, closing, moving, focus, workspace), and every 20 s for a wallpaper that moves.
+fn watch_backdrop() {
+    std::thread::spawn(|| {
+        use std::io::{BufRead, BufReader};
+        let (Ok(runtime), Ok(sig)) = (std::env::var("XDG_RUNTIME_DIR"), std::env::var("HYPRLAND_INSTANCE_SIGNATURE"))
+        else {
+            return;
+        };
+        let Ok(stream) = std::os::unix::net::UnixStream::connect(format!("{runtime}/hypr/{sig}/.socket2.sock")) else {
+            return;
+        };
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(20)));
+        let mut lines = BufReader::new(stream);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match lines.read_line(&mut line) {
+                Ok(0) => return,
+                Ok(_) => {
+                    if ["workspace>>", "openwindow>>", "closewindow>>", "movewindow>>", "activewindow>>", "fullscreen>>"]
+                        .iter()
+                        .any(|e| line.starts_with(e))
+                    {
+                        // Let the change settle (and a burst of events collapse into one look).
+                        std::thread::sleep(Duration::from_millis(400));
+                        sample_backdrop();
+                    }
+                }
+                Err(_) => sample_backdrop(),
+            }
+        }
+    });
 }
 
 /// Where whether Hyprland's blur was on before a palette turned it on is kept, so that it can be
@@ -384,6 +498,8 @@ pub fn set_bar(now: bool) {
 pub fn apply(entry: &Entry) {
     APPLIED.with(|a| *a.borrow_mut() = Some(entry.clone()));
     compositor_glass(entry.blur);
+    GLASSY.store(entry.blur > 0.0, Ordering::Relaxed);
+    sample_backdrop();
     label().set(entry.label.clone());
     is_glass().set(entry.blur > 0.0);
     if entry.is_stock() && opacity().get_untracked() >= 1.0 {
