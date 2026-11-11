@@ -59,11 +59,17 @@ fn aside(path: &PathBuf) -> PathBuf {
 pub fn release() {
     let Some(path) = socket() else { return };
     let kept = aside(&path);
-    let _ = std::fs::remove_file(&path);
     if kept.exists() {
+        let _ = std::fs::remove_file(&path);
         let _ = std::fs::rename(&kept, &path);
+    } else if ALONE.load(std::sync::atomic::Ordering::Relaxed) {
+        // Only a socket that is ours: one that appeared since is Quickshell's.
+        let _ = std::fs::remove_file(&path);
     }
 }
+
+/// Whether the socket was bound with no Quickshell to give it back to.
+static ALONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Takes the socket over. Call once, from the root, after what answers has been installed. With
 /// Quickshell running its socket is moved aside and calls we do not answer are passed on to it;
@@ -83,6 +89,7 @@ pub fn serve() {
     } else {
         // A socket nobody listens on, or none.
         let _ = std::fs::remove_file(&path);
+        ALONE.store(true, std::sync::atomic::Ordering::Relaxed);
     }
     let listener = match UnixListener::bind(&path) {
         Ok(l) => l,
