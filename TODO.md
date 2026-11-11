@@ -39,10 +39,11 @@ implemented yet by this branch (`feat/omarchy-actions`): this is the analysis.
 | Panels: quick settings, calendar, clipboard history, media | `shoji-bar-4 msg toggle <panel>` |
 | Power dialog (shutdown, reboot, logout) | `power_dialog.rs` |
 | GPU mode (not an Omarchy action) | `plugins/gpu.rs` |
+| Media: next, previous, play/pause, with the pill, and the pill for a new track | `shoji-bar-4 msg media next\|previous\|play-pause\|play\|pause`, `osd.rs` |
 
 ### To port, by how often they are used
 
-1. **Media: play/pause, next, previous** (`XF86AudioPlay/Pause/Next/Prev`, `Super+XF86AudioRaise/Lower`
+1. **Media: play/pause, next, previous** (DONE in 0.6.0: `msg media ...`, the pill and the track-change pill; what is left is pointing the bindings at it, see below) (`XF86AudioPlay/Pause/Next/Prev`, `Super+XF86AudioRaise/Lower`
    for next/previous, `Alt+XF86AudioPlay` next, `Alt+Shift+XF86AudioPlay` previous). Quickshell does
    it through MPRIS; shoji has the MPRIS client (`media()`), so a `msg media next|previous|play-pause`
    is a few lines. Missing: the **OSD for them** (Omarchy's `osd.show` with `media-next`,

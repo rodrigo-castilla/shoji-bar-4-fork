@@ -7,6 +7,7 @@
 //! shoji-bar-4 msg toggle calendar [OUTPUT]
 //! shoji-bar-4 msg toggle clipboard [OUTPUT]
 //! shoji-bar-4 msg toggle media [OUTPUT]
+//! shoji-bar-4 msg media next|previous|play-pause|play|pause
 //! shoji-bar-4 msg close
 //! shoji-bar-4 msg lock
 //! shoji-bar-4 msg theme dark|light|auto|toggle
@@ -162,6 +163,12 @@ fn run(line: &str) -> Result<String, String> {
                 other => return Err(format!("no theme called {other}")),
             };
             settings().update(|s| s.mode = mode);
+            Ok(String::new())
+        }
+        ["media", action] => {
+            let action = crate::osd::Action::parse(action)
+                .ok_or_else(|| format!("no media action called {action}"))?;
+            crate::osd::media_action(action)?;
             Ok(String::new())
         }
         ["status"] => Ok(status()),

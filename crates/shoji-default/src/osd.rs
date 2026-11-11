@@ -14,6 +14,55 @@ use std::time::Duration;
 enum Shown {
     Volume,
     Brightness,
+    /// The track that plays and what was just done to it.
+    Media,
+}
+
+/// What can be done to the player from outside (`shoji-bar-4 msg media ...`).
+#[derive(Clone, Copy, PartialEq)]
+pub enum Action {
+    Next,
+    Previous,
+    PlayPause,
+    Play,
+    Pause,
+}
+
+impl Action {
+    pub fn parse(word: &str) -> Option<Self> {
+        Some(match word {
+            "next" => Self::Next,
+            "previous" | "prev" => Self::Previous,
+            "play-pause" | "playpause" | "toggle" => Self::PlayPause,
+            "play" => Self::Play,
+            "pause" => Self::Pause,
+            _ => return None,
+        })
+    }
+}
+
+thread_local! {
+    /// Shows the pill for a media action, once `install` has run.
+    static MEDIA_SHOWN: std::cell::RefCell<Option<std::rc::Rc<dyn Fn(&'static Symbol)>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Does `action` to the player that is current, and says so in the pill.
+pub fn media_action(action: Action) -> Result<(), String> {
+    let player = media().current().ok_or("nothing is playing")?;
+    let playing = player.status == PlaybackStatus::Playing;
+    let (icon, _task) = match action {
+        Action::Next => (icons::SKIP_NEXT, player.next()),
+        Action::Previous => (icons::SKIP_PREVIOUS, player.previous()),
+        Action::PlayPause if playing => (icons::PAUSE, player.play_pause()),
+        Action::PlayPause => (icons::PLAY_ARROW, player.play_pause()),
+        Action::Play => (icons::PLAY_ARROW, player.play()),
+        Action::Pause => (icons::PAUSE, player.pause()),
+    };
+    if let Some(f) = MEDIA_SHOWN.with(|m| m.borrow().clone()) {
+        f(icon);
+    }
+    Ok(())
 }
 
 /// Follows the volume and the brightness. Call once, from the root.
@@ -37,6 +86,46 @@ pub fn install() {
         })));
     };
     let show_for = std::rc::Rc::new(show_for);
+    // The pill of the player: the icon of what was done, and the track as it is now.
+    let media_icon = signal(icons::MUSIC_NOTE);
+    let track = memo(move || {
+        media()
+            .current()
+            .map(|p| (p.title.clone(), p.artists.join(", ")))
+            .unwrap_or_default()
+    });
+    let last_action = std::rc::Rc::new(Cell::new(None::<std::time::Instant>));
+    {
+        let show_for = show_for.clone();
+        let last_action = last_action.clone();
+        MEDIA_SHOWN.with(|m| {
+            *m.borrow_mut() = Some(std::rc::Rc::new(move |icon| {
+                last_action.set(Some(std::time::Instant::now()));
+                media_icon.set(icon);
+                show_for(Shown::Media);
+            }));
+        });
+    }
+    // A new track, however it came: announced, unless the pill is already there for an action.
+    let last_track = Cell::new(None::<(String, String)>);
+    {
+        let show_for = show_for.clone();
+        effect(move || {
+            let now = track.get();
+            let before = last_track.replace(Some(now.clone()));
+            if before.is_some_and(|b| b != now) && !now.0.is_empty() {
+                untrack(|| {
+                    let by_action = last_action
+                        .get()
+                        .is_some_and(|t| t.elapsed() < Duration::from_millis(1500));
+                    if !by_action {
+                        media_icon.set(icons::MUSIC_NOTE);
+                    }
+                    show_for(Shown::Media);
+                });
+            }
+        });
+    }
     // Not for what is there at the start, nor for another device becoming the default.
     let last_volume = Cell::new(None::<(i32, bool, u32)>);
     let on_volume = show_for.clone();
@@ -96,15 +185,26 @@ pub fn install() {
                 .click_through()
                 .namespace("shoji-bar-4-osd"),
             move || {
+                if kind.get_untracked() == Shown::Media {
+                    return div().p(16.0_f32).select_none().child(
+                        show(move || visible.get(), move || media_pill(media_icon, move || track.get()))
+                            .appear()
+                            .enter(|s| s.opacity(0.0_f32).translate_y(40.0_f32).scale(0.8_f32))
+                            .exit(|s| s.opacity(0.0_f32).translate_y(24.0_f32).scale(0.9_f32))
+                            .transition(overshoot(420)),
+                    );
+                }
                 let level = move || match kind.get() {
                     Shown::Volume => volume
                         .get()
                         .map_or(0.0, |v| if v.1 { 0.0 } else { v.0 as f32 / 100.0 }),
                     Shown::Brightness => brightness.get().unwrap_or(0) as f32 / 100.0,
+                    Shown::Media => 0.0,
                 };
                 let symbol = move || -> &'static Symbol {
                     match kind.get() {
                         Shown::Brightness => icons::BRIGHTNESS_6,
+                        Shown::Media => icons::MUSIC_NOTE,
                         Shown::Volume => match volume.get() {
                             Some(v) if v.1 || v.0 == 0 => icons::VOLUME_OFF,
                             Some(v) if v.0 < 50 => icons::VOLUME_DOWN,
@@ -183,5 +283,47 @@ fn pill(
             )
             .w(32.0)
             .justify_end(),
+        )
+}
+
+/// The pill for the player: the icon of the action and the title with who it is by.
+fn media_pill(
+    icon: Signal<&'static Symbol>,
+    track: impl Fn() -> (String, String) + Copy + 'static,
+) -> Div {
+    div()
+        .w(320.0)
+        .h(48.0)
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(12.0_f32)
+        .px(12.0_f32)
+        .rounded(24.0_f32)
+        .shadows(elevation(3))
+        .dyn_style(|s| {
+            let c = colors();
+            s.bg(c.surface_container_high).text_color(c.on_surface)
+        })
+        .child(
+            div()
+                .size(30.0)
+                .rounded(15.0_f32)
+                .flex()
+                .items_center()
+                .justify_center()
+                .flex_none()
+                .dyn_style(|s| s.bg(colors().primary_container))
+                .child(dyn_sym(move || icon.get(), 17.0, |c| c.on_primary_container)),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w(0.0)
+                .overflow_hidden()
+                .child(txt(TextStyle::LABEL_LARGE, move || {
+                    let (title, by) = track();
+                    if by.is_empty() { title } else { format!("{title} · {by}") }
+                })),
         )
 }

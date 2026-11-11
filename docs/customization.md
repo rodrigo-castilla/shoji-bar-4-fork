@@ -179,3 +179,10 @@ workspace manifest.
 `ui_scale` in `~/.local/state/shoji-bar-4/settings.json` (1.0 normal, 0.85 smaller) sizes the whole
 interface, whichever one it is. It is read as the shell starts, and it needs AntiWebUI with a small
 patch: see [UI zoom](development.md#ui-zoom).
+
+### Media commands
+
+`shoji-bar-4 msg media next|previous|play-pause|play|pause` does that to the current player and
+shows a pill (the icon of the action and "title · artist"); a track that changes by itself shows
+the pill too. To use them for the media keys, point the bindings at it, e.g.
+`o.bind("XF86AudioNext", "Next track", "shoji-bar-4 msg media next", { locked = true })`.
