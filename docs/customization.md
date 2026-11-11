@@ -179,3 +179,10 @@ workspace manifest.
 `ui_scale` in `~/.local/state/shoji-bar-4/settings.json` (1.0 normal, 0.85 smaller) sizes the whole
 interface, whichever one it is. It is read as the shell starts, and it needs AntiWebUI with a small
 patch: see [UI zoom](development.md#ui-zoom).
+
+## Performance
+
+Release builds use fat LTO, one codegen unit and `panic = "abort"`. Frame drops during animations
+usually come from the integrated GPU and CPU running at a low clock (the shell, the compositor and
+a video wallpaper share one iGPU): `scripts/performance.sh on` switches the power profile to
+`performance` and holds the iGPU clock at its maximum; `off` undoes it.
