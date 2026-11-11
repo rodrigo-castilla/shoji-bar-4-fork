@@ -1,18 +1,16 @@
 #!/bin/bash
-# Makes shoji-bar-4 build against an AntiWebUI with the UI zoom patch, which is what gives the
-# `ui_scale` setting its effect.
+# Makes shoji-bar-4 build against an AntiWebUI with this fork's patches (UI zoom, which gives the
+# `ui_scale` setting its effect, and the notification hints).
 #
-# It copies the AntiWebUI revision that Cargo.lock pins out of cargo's git checkouts, applies
-# patches/antiwebui-ui-zoom.patch to the copy, and writes .cargo/config.toml (which git ignores) to
-# make cargo use the copy. Run it again after Cargo.lock moves to another AntiWebUI revision.
+# It copies the AntiWebUI revision named in patches/antiwebui.rev out of cargo's git checkouts,
+# applies every patches/*.patch to the copy, and writes .cargo/config.toml (git ignores it) to make
+# cargo use the copy. Cargo.lock is committed as that build resolves it (the patched crates are
+# path packages, with no machine-specific path in the lock), so after this a plain
+# `cargo build --release` leaves it untouched. Change the revision by editing patches/antiwebui.rev,
+# running this script again and committing the Cargo.lock that comes out.
 #
-#   scripts/apply-antiwebui-patch.sh            # then: cargo build --release
+#   scripts/apply-antiwebui-patch.sh            # once per clone; then: cargo build --release
 #   SHOJI_ANTIWEBUI_DIR=/some/dir scripts/apply-antiwebui-patch.sh
-#
-# Cargo then rewrites Cargo.lock to point at the copy. That change is only good for this machine:
-# do not commit it (`git checkout Cargo.lock` drops it).
-#
-# To go back to the unpatched AntiWebUI, delete .cargo/config.toml and run `git checkout Cargo.lock`.
 
 set -euo pipefail
 
@@ -20,11 +18,8 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 patch_files=("$root"/patches/*.patch)
 dest=${SHOJI_ANTIWEBUI_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/shoji-bar-4/AntiWebUI}
 
-# Once cargo builds against the copy it rewrites Cargo.lock for this machine, so read the revision
-# from the lock as committed.
-lock=$(git -C "$root" show HEAD:Cargo.lock 2>/dev/null || cat "$root/Cargo.lock")
-rev=$(grep -m1 -oE 'AntiWebUI\.git\?branch=main#[0-9a-f]+' <<<"$lock" | sed 's/.*#//')
-[[ -n $rev ]] || { echo "no AntiWebUI revision in Cargo.lock" >&2; exit 1; }
+rev=$(tr -d '[:space:]' <"$root/patches/antiwebui.rev")
+[[ -n $rev ]] || { echo "no AntiWebUI revision in patches/antiwebui.rev" >&2; exit 1; }
 
 checkout=$(ls -d "$HOME"/.cargo/git/checkouts/antiwebui-*/"${rev:0:7}" 2>/dev/null | head -n 1 || true)
 if [[ -z $checkout ]]; then

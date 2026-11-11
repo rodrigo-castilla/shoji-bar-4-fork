@@ -1,3 +1,6 @@
+> Version numbers below 0.4.0-release (0.5.0 ... 0.14.0) in these notes are the working numbers of the
+> branches; they were released together as 0.4.0 (see CHANGELOG.md).
+
 # TODO
 
 ## Omarchy port actions

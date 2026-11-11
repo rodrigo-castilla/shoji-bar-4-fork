@@ -12,7 +12,7 @@ A cargo workspace of three crates:
 
 ## AntiWebUI
 
-AntiWebUI comes from GitHub's `main`, and `Cargo.lock` pins the commit used. To move to a newer AntiWebUI:
+AntiWebUI comes from GitHub's `main`; `patches/antiwebui.rev` pins the commit the patched copy is made from. To move to a newer AntiWebUI:
 
 ```sh
 cargo update -p anti-webui -p anti-webui-md3e
@@ -30,7 +30,7 @@ The `dynamic_linking` feature links AntiWebUI dynamically, for faster rebuilds w
 
 ## UI zoom
 
-The `ui_scale` setting needs a small patch to AntiWebUI, in `patches/antiwebui-ui-zoom.patch`. It makes the layer-shell windows lay out and draw at a factor of the compositor's scale, which AntiWebUI has no setting for. `scripts/apply-antiwebui-patch.sh` copies the AntiWebUI revision `Cargo.lock` pins, applies the patch and writes `.cargo/config.toml` to use the copy (the same file as above, so it replaces a local-checkout patch). Cargo then rewrites `Cargo.lock` for that machine: do not commit that change. Without the patch the shell builds and runs, and `ui_scale` does nothing.
+The fork patches AntiWebUI (`patches/*.patch`): `ui_scale` needs the UI zoom patch (the layer-shell windows lay out and draw at a factor of the compositor's scale, which AntiWebUI has no setting for) and notifications need the hint fields patch. `scripts/apply-antiwebui-patch.sh` copies the AntiWebUI revision of `patches/antiwebui.rev`, applies every patch and writes `.cargo/config.toml` to use the copy (once per clone). `Cargo.lock` is committed as that build resolves it, so `cargo build --release` leaves it untouched. To move to a newer AntiWebUI, change the revision in `patches/antiwebui.rev`, run the script again and commit the `Cargo.lock` that comes out.
 
 ## Offscreen previews
 

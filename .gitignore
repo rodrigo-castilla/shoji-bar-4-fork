@@ -1,9 +1,7 @@
 # Build output
 /target/
 
-# Machine-local: points cargo at the patched copy of AntiWebUI that scripts/apply-antiwebui-patch.sh
-# writes (and its backup). Never commit it, nor a Cargo.lock that cargo rewrote because of it
-# (`git checkout Cargo.lock` before committing).
+# Machine-local: points cargo at the patched copy of AntiWebUI (scripts/apply-antiwebui-patch.sh).
 /.cargo/
 
 # Measurements from scripts/fps-test.sh and scripts/perf-ab.sh
