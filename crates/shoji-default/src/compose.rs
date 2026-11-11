@@ -105,6 +105,7 @@ impl Ui {
             osd::install();
             omarchy::serve();
             keys::take();
+            crate::clipboard::watch();
         }
         if self.services.lock {
             lock::install();

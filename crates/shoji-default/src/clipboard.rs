@@ -1,4 +1,4 @@
-//! The clipboard's history, as cliphist keeps it: a search field over what was copied, newest
+//! The clipboard's history, as Omarchy keeps it (`clipboard-history.json`): a search field over what was copied, newest
 //! first, the pictures as small copies of themselves. Arrows move the choice, Enter or a click puts
 //! it back on the clipboard, Delete forgets it (Shift+Delete while searching), Escape closes.
 
@@ -12,7 +12,6 @@ use anti_webui_md3e::icons::{self, Symbol};
 use anti_webui_md3e::motion::{default_spatial, fast_spatial};
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::rc::Rc;
@@ -33,36 +32,27 @@ const SHOWN: usize = 100;
 /// How many entries come in one after another when it opens; the rest come with the last.
 const STAGGERED: usize = 9;
 
-/// Something cliphist kept.
+/// Something Omarchy's clipboard history kept (`~/.local/state/omarchy/clipboard-history.json`).
 #[derive(Clone, Debug, PartialEq)]
 struct Entry {
-    /// The line cliphist listed it as, which is how it is asked for again.
+    /// What identifies it in the file: its text, or its picture's path.
     line: String,
     id: u64,
-    /// The start of the text, or what cliphist says of a picture.
+    /// The start of the text, or what it is of a picture.
     preview: String,
     picture: Option<Picture>,
+    /// The picture's own file.
+    file: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 struct Picture {
     format: String,
-    width: u32,
-    height: u32,
-    size: String,
+    /// When it was copied, as Omarchy wrote it.
+    when: String,
 }
 
 impl Entry {
-    fn parse(line: &str) -> Option<Self> {
-        let (id, preview) = line.split_once('\t')?;
-        Some(Self {
-            line: line.to_owned(),
-            id: id.parse().ok()?,
-            preview: preview.trim().to_owned(),
-            picture: Picture::parse(preview),
-        })
-    }
-
     fn height(&self) -> f32 {
         if self.picture.is_some() {
             PICTURE_H
@@ -77,157 +67,192 @@ impl Entry {
         query.is_empty()
             || match &self.picture {
                 Some(p) => p.format.contains(&query) || "image".contains(&query),
-                None => self.preview.to_lowercase().contains(&query),
+                None => self.line.to_lowercase().contains(&query),
             }
     }
 
-    /// Where the small copy of its picture goes.
+    /// Where its picture is.
     fn picture_path(&self) -> Option<PathBuf> {
-        let p = self.picture.as_ref()?;
-        Some(pictures_dir().join(format!("{}.{}", self.id, p.format)))
+        self.file.clone()
+    }
+
+    fn from_json(v: &serde_json::Value) -> Option<Self> {
+        use std::hash::{Hash, Hasher};
+        let id_of = |key: &str| {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            key.hash(&mut h);
+            h.finish()
+        };
+        match v["type"].as_str()? {
+            "text" => {
+                let text = v["text"].as_str()?;
+                let preview: String = text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(300).collect();
+                (!preview.is_empty()).then(|| Self {
+                    line: text.to_owned(),
+                    id: id_of(text),
+                    preview,
+                    picture: None,
+                    file: None,
+                })
+            }
+            "image" => {
+                let path = v["path"].as_str()?;
+                let format = v["mime"].as_str().unwrap_or("image/png").trim_start_matches("image/").to_owned();
+                Some(Self {
+                    line: path.to_owned(),
+                    id: id_of(path),
+                    preview: String::new(),
+                    picture: Some(Picture { format, when: v["capturedAt"].as_str().unwrap_or("").to_owned() }),
+                    file: Some(PathBuf::from(path)),
+                })
+            }
+            _ => None,
+        }
     }
 }
 
 impl Picture {
-    /// What cliphist lists a picture as: `[[ binary data 48 KiB png 316x192 ]]`.
-    fn parse(preview: &str) -> Option<Self> {
-        let rest = preview
-            .trim()
-            .strip_prefix("[[ binary data ")?
-            .strip_suffix("]]")?;
-        let mut words = rest.split_whitespace();
-        let size = format!("{} {}", words.next()?, words.next()?);
-        let format = words.next()?.to_lowercase();
-        if !matches!(
-            format.as_str(),
-            "png" | "jpeg" | "jpg" | "webp" | "gif" | "bmp"
-        ) {
-            return None;
-        }
-        let (width, height) = words.next()?.split_once('x')?;
-        Some(Self {
-            format,
-            width: width.parse().ok()?,
-            height: height.parse().ok()?,
-            size,
-        })
-    }
-
     fn describe(&self) -> String {
-        format!(
-            "{} · {} × {} · {}",
-            self.format.to_uppercase(),
-            self.width,
-            self.height,
-            self.size
-        )
+        if self.when.is_empty() {
+            self.format.to_uppercase()
+        } else {
+            format!("{} · {}", self.format.to_uppercase(), self.when)
+        }
     }
 }
 
 thread_local! {
-    /// What was listed the last time, shown at once the next time while cliphist is asked again.
+    /// What was listed the last time, shown at once the next time while the file is read again.
     static LAST: RefCell<Vec<Entry>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Where pictures are written out for their small copies; they last until the session ends.
-fn pictures_dir() -> PathBuf {
-    std::env::var_os("XDG_RUNTIME_DIR")
+const LIMIT: usize = 500;
+
+fn history_path() -> PathBuf {
+    let state = std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join("shoji-bar-4-clipboard")
+        .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/state"));
+    state.join("omarchy/clipboard-history.json")
 }
 
-/// Asks cliphist for what it has, off this thread. `None` when it couldn't.
+/// The history file, newest first. A missing file is an empty history.
+fn read_history() -> Vec<serde_json::Value> {
+    std::fs::read_to_string(history_path())
+        .ok()
+        .and_then(|t| serde_json::from_str::<Vec<serde_json::Value>>(&t).ok())
+        .unwrap_or_default()
+}
+
+fn key_of(v: &serde_json::Value) -> Option<String> {
+    match v["type"].as_str()? {
+        "text" => v["text"].as_str().map(str::to_owned),
+        "image" => v["path"].as_str().map(str::to_owned),
+        _ => None,
+    }
+}
+
+/// Written whole, through a rename, so that a reader never sees half of it.
+fn write_history(list: &[serde_json::Value]) {
+    let path = history_path();
+    let part = path.with_extension("json.part");
+    if let Ok(text) = serde_json::to_string_pretty(&list[..list.len().min(LIMIT)]) {
+        if std::fs::write(&part, text + "\n").is_ok() {
+            let _ = std::fs::rename(&part, &path);
+        }
+    }
+}
+
+static HISTORY: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Reads the history, off this thread.
 fn load(done: impl Fn(Option<Vec<Entry>>) + 'static) {
     let to_ui = ui_channel(done);
-    let _ = std::thread::Builder::new()
-        .name("shoji-bar-4 cliphist".into())
-        .spawn(move || {
-            let listed = Command::new("cliphist")
-                .args(["-preview-width", "300", "list"])
-                .stderr(Stdio::null())
-                .output()
-                .ok()
-                .filter(|o| o.status.success())
-                .map(|o| {
-                    String::from_utf8_lossy(&o.stdout)
-                        .lines()
-                        .filter_map(Entry::parse)
-                        .collect()
-                });
-            to_ui.send(listed);
-        });
+    let _ = std::thread::Builder::new().name("shoji-bar-4 clipboard".into()).spawn(move || {
+        let _one = HISTORY.lock();
+        let list: Vec<Entry> = read_history().iter().filter_map(Entry::from_json).collect();
+        to_ui.send(Some(list));
+    });
 }
 
-/// Writes pictures out, one after another off this thread, and says which are there. It stops
-/// when what it returns goes.
+/// Keeps the picture rows' files in view: they are Omarchy's own files, so there is nothing to
+/// write out; it only says which are there.
 fn picture_writer(written: Signal<HashSet<u64>>) -> mpsc::Sender<Entry> {
     let (tx, rx) = mpsc::channel::<Entry>();
     let to_ui = ui_channel(move |id: u64| written.update(|w| _ = w.insert(id)));
-    let _ = std::thread::Builder::new()
-        .name("shoji-bar-4 pictures".into())
-        .spawn(move || {
-            let _ = std::fs::create_dir_all(pictures_dir());
-            for entry in rx {
-                let Some(path) = entry.picture_path() else {
-                    continue;
-                };
-                if path.exists() || decode(&entry.line, &path).is_ok() {
-                    to_ui.send(entry.id);
-                }
+    let _ = std::thread::Builder::new().name("shoji-bar-4 pictures".into()).spawn(move || {
+        for entry in rx {
+            if entry.picture_path().is_some_and(|p| p.exists()) {
+                to_ui.send(entry.id);
             }
-        });
+        }
+    });
     tx
 }
 
-/// `cliphist decode` into a file, which is only there once it is whole.
-fn decode(line: &str, to: &Path) -> std::io::Result<()> {
-    let part = to.with_extension("part");
-    let mut child = Command::new("cliphist")
-        .arg("decode")
-        .stdin(Stdio::piped())
-        .stdout(std::fs::File::create(&part)?)
-        .stderr(Stdio::null())
-        .spawn()?;
-    if let Some(mut stdin) = child.stdin.take() {
-        writeln!(stdin, "{line}")?;
-    }
-    if child.wait()?.success() {
-        std::fs::rename(&part, to)
-    } else {
-        let _ = std::fs::remove_file(&part);
-        Err(std::io::Error::other("cliphist decode failed"))
-    }
-}
-
-/// Runs a shell script with `line` as `$1`, off this thread.
-fn run(script: &'static str, line: String) {
-    let _ = std::thread::Builder::new()
-        .name("shoji-bar-4 cliphist".into())
-        .spawn(move || {
-            let _ = Command::new("sh")
-                .args(["-c", script, "sh", &line])
+/// Puts it on the clipboard again (the watcher then lists it first).
+fn copy(entry: &Entry) {
+    let key = entry.line.clone();
+    let _ = std::thread::Builder::new().name("shoji-bar-4 clipboard".into()).spawn(move || {
+        let index = {
+            let _one = HISTORY.lock();
+            read_history().iter().position(|v| key_of(v).as_deref() == Some(key.as_str()))
+        };
+        if let Some(index) = index {
+            let _ = Command::new("omarchy-clipboard-paste-text")
+                .args(["--copy-only", "--history-index", &index.to_string()])
                 .stdin(Stdio::null())
                 .status();
-        });
+        }
+    });
 }
 
-/// Puts it on the clipboard again; cliphist then lists it first.
-fn copy(entry: &Entry) {
-    run(
-        r#"printf '%s\n' "$1" | cliphist decode | wl-copy"#,
-        entry.line.clone(),
-    );
-}
-
-/// Has cliphist forget it.
+/// Forgets it.
 fn forget(entry: &Entry) {
-    run(
-        r#"printf '%s\n' "$1" | cliphist delete"#,
-        entry.line.clone(),
-    );
-    if let Some(path) = entry.picture_path() {
-        let _ = std::fs::remove_file(path);
+    let key = entry.line.clone();
+    let _ = std::thread::Builder::new().name("shoji-bar-4 clipboard".into()).spawn(move || {
+        let _one = HISTORY.lock();
+        let mut list = read_history();
+        if let Some(at) = list.iter().position(|v| key_of(v).as_deref() == Some(key.as_str())) {
+            list.remove(at);
+            write_history(&list);
+        }
+    });
+}
+
+/// What Quickshell's clipboard plugin does while it is the shell: `wl-paste --watch` runs Omarchy's
+/// `capture.sh` at each copy, and what it prints (a JSON entry) goes first in the history. Done
+/// here when this shell is the one in use, or nothing would be kept.
+pub fn watch() {
+    let script = "/usr/share/omarchy/shell/plugins/clipboard/capture.sh";
+    if !Path::new(script).exists()
+        || Command::new("pgrep").args(["-x", "quickshell"]).stdout(Stdio::null()).status().is_ok_and(|s| s.success())
+    {
+        return;
+    }
+    for mime in ["text", "image/png"] {
+        let _ = std::thread::Builder::new().name("shoji-bar-4 clipboard watch".into()).spawn(move || {
+            use std::io::{BufRead, BufReader};
+            let Ok(mut child) = Command::new("setpriv")
+                .args(["--pdeathsig", "TERM", "wl-paste", "--type", mime, "--watch", script, mime])
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+            else {
+                return;
+            };
+            let Some(out) = child.stdout.take() else { return };
+            for line in BufReader::new(out).lines().map_while(Result::ok) {
+                let Ok(entry) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+                let Some(key) = key_of(&entry) else { continue };
+                let _one = HISTORY.lock();
+                let mut list = read_history();
+                list.retain(|v| key_of(v).as_deref() != Some(key.as_str()));
+                list.insert(0, entry);
+                write_history(&list);
+            }
+            let _ = child.wait();
+        });
     }
 }
 
@@ -481,7 +506,7 @@ pub fn panel(output: Output) -> Div {
 /// What the list says when it has nothing to show.
 fn nothing(query: Signal<String>, failed: Signal<bool>) -> Div {
     let (symbol, said): (&'static Symbol, String) = if failed.get_untracked() {
-        (icons::CONTENT_PASTE_OFF, "cliphist isn't there".into())
+        (icons::CONTENT_PASTE_OFF, "The clipboard history can't be read".into())
     } else if query.with_untracked(|q| q.trim().is_empty()) {
         (icons::CONTENT_PASTE, "Nothing copied yet".into())
     } else {

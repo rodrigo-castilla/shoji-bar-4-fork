@@ -55,6 +55,11 @@ card is selected; Down/J/Tab and Up/K move, a number presses that button (the bu
 card are numbered), Enter clicks the card, Delete/Backspace dismisses it, Escape or ten idle seconds
 give the keyboard back.
 
+Done in 0.13.0: the clipboard panel uses Omarchy's own history (`~/.local/state/omarchy/clipboard-history.json`)
+instead of cliphist, and, when Quickshell is not running, shoji runs the `wl-paste --watch capture.sh`
+watchers Quickshell's clipboard plugin ran, so what is copied is kept. Copy goes through
+`omarchy-clipboard-paste-text --copy-only --history-index`.
+
 Not yet: emojis (`omarchy.emojis`), reminders (`omarchy-reminder`), translations of the menu
 (`~/.config/omarchy/language`), `--on-change` live selects, and the rest of the plugin panels
 (weather, tailscale, elsewhen, ...). Next.
