@@ -4,6 +4,7 @@ mod agents;
 mod animation;
 mod colour;
 mod menu;
+mod meter;
 #[path = "music-player.rs"]
 mod music_player;
 mod tray;

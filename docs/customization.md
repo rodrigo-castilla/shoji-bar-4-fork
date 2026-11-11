@@ -186,3 +186,11 @@ Release builds use fat LTO, one codegen unit and `panic = "abort"`. Frame drops 
 usually come from the integrated GPU and CPU running at a low clock (the shell, the compositor and
 a video wallpaper share one iGPU): `scripts/performance.sh on` switches the power profile to
 `performance` and holds the iGPU clock at its maximum; `off` undoes it.
+
+### Measuring frames
+
+`plugins/meter.rs` is a frame meter that is off until asked for. `scripts/fps-test.sh [SECONDS]`
+turns it on, switches the bar and the palettes, sweeps the opacity, leaves SECONDS for you to open
+and close panels, and writes `fps.txt` (a summary for each step), `fps.csv` (every frame) and
+`system.csv` (CPU and iGPU clocks) to `logs/<date>/`. While it measures, the shell is asked for a
+frame all the time, so the numbers are the most it can draw, not what it draws when idle.

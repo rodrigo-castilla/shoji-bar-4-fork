@@ -99,6 +99,10 @@ fn poll_command() {
                     }
                 }
                 (Some("bar"), Some(v)) => set_bar(v == "on"),
+                (Some("opacity"), Some(v)) => set_opacity(v.parse().unwrap_or(1.0)),
+                (Some("meter"), Some(what)) => {
+                    super::meter::command(what, text.trim().splitn(3, char::is_whitespace).nth(2).unwrap_or(""))
+                }
                 _ => {}
             }
         }
