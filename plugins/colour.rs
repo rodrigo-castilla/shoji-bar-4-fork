@@ -41,6 +41,8 @@ static BRIGHT: AtomicBool = AtomicBool::new(false);
 /// A glass palette is in use: the only time the backdrop is looked at.
 static GLASSY: AtomicBool = AtomicBool::new(false);
 static SAMPLING: AtomicBool = AtomicBool::new(false);
+/// One of the shell's panels is on the screen (from Hyprland's layer events).
+static PANEL_OPEN: AtomicBool = AtomicBool::new(false);
 
 fn sig<T: Clone + 'static>(slot: &'static std::thread::LocalKey<Cell<Option<Signal<T>>>>, init: T) -> Signal<T> {
     slot.with(|s| match s.get() {
@@ -337,14 +339,22 @@ fn flip_ink(c: Color) -> Color {
 /// Mean luminance (0..1) of the strip at the top of the screen, where the bar is, as the compositor
 /// shows it (wallpaper, video, windows). `grim` takes just the strip, already scaled down to a few
 /// hundred pixels, so this costs a screen copy of 40 rows and a loop over ~1000 pixels.
-fn backdrop_luminance() -> Option<f32> {
+fn backdrop_luminance(panel: bool) -> Option<f32> {
     let monitors = std::process::Command::new("hyprctl").args(["monitors", "-j"]).output().ok()?;
     let json: serde_json::Value = serde_json::from_slice(&monitors.stdout).ok()?;
     let m = json.as_array()?.iter().find(|m| m["focused"].as_bool() == Some(true)).or(json.get(0))?;
     let width = (m["width"].as_f64()? / m["scale"].as_f64().unwrap_or(1.0)) as u32;
-    let geometry = format!("{},{} {}x40", m["x"].as_i64()?, m["y"].as_i64()?, width);
+    // With a panel open it is the panel that is being read, and it sits over the screen, not over
+    // the strip of the bar: the rest of the screen is looked at, at a much smaller scale.
+    let (top, rows, scale) = if panel {
+        let height = (m["height"].as_f64()? / m["scale"].as_f64().unwrap_or(1.0)) as u32;
+        (40, height.saturating_sub(40).max(1), "0.05")
+    } else {
+        (0, 40, "0.25")
+    };
+    let geometry = format!("{},{} {}x{}", m["x"].as_i64()?, m["y"].as_i64()? + top, width, rows);
     let out = std::process::Command::new("grim")
-        .args(["-g", &geometry, "-s", "0.25", "-t", "ppm", "-"])
+        .args(["-g", &geometry, "-s", scale, "-t", "ppm", "-"])
         .output()
         .ok()?;
     let data = &out.stdout;
@@ -371,7 +381,7 @@ fn sample_backdrop() {
         return;
     }
     std::thread::spawn(|| {
-        if let Some(l) = backdrop_luminance() {
+        if let Some(l) = backdrop_luminance(PANEL_OPEN.load(Ordering::Relaxed)) {
             let was = BRIGHT.load(Ordering::Relaxed);
             let now = if was { l > 0.45 } else { l > 0.58 };
             if now != was {
@@ -405,6 +415,19 @@ fn watch_backdrop() {
             match lines.read_line(&mut line) {
                 Ok(0) => return,
                 Ok(_) => {
+                    if let Some((open, name)) = line
+                        .strip_prefix("openlayer>>")
+                        .map(|n| (true, n))
+                        .or_else(|| line.strip_prefix("closelayer>>").map(|n| (false, n)))
+                    {
+                        let name = name.trim();
+                        if name.starts_with("shoji-bar-4-") && !matches!(name, "shoji-bar-4-bar" | "shoji-bar-4-dock") {
+                            PANEL_OPEN.store(open, Ordering::Relaxed);
+                            std::thread::sleep(Duration::from_millis(450));
+                            sample_backdrop();
+                        }
+                        continue;
+                    }
                     if ["workspace>>", "openwindow>>", "closewindow>>", "movewindow>>", "activewindow>>", "fullscreen>>"]
                         .iter()
                         .any(|e| line.starts_with(e))
