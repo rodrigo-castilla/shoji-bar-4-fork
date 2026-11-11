@@ -1,0 +1,98 @@
+# TODO
+
+## Omarchy port actions
+
+Analysis of what Omarchy does through Quickshell (its bindings are in
+`/usr/share/omarchy/default/hypr/bindings/*.lua`, the shell in `/usr/share/omarchy/shell`) and what
+`shoji-bar-4` has to do to answer the same actions when it is the bar in use. Nothing here is
+implemented yet by this branch (`feat/omarchy-actions`): this is the analysis.
+
+### How Omarchy does it
+
+- Key bindings call one of three things: `{ ipc = "target.method" }` (a call into the running
+  Quickshell, the same as `omarchy-shell <target> <method>`), `{ menu = ... }` / `{ panel = ... }`
+  (the same through `omarchy-shell shell toggle <plugin>`), or a plain `omarchy-*` command.
+- Quickshell IPC targets (`qs -n -p /usr/share/omarchy/shell ipc show`): `media`
+  (`next previous playPause play pause stop source sourceNext sourcePrevious status`),
+  `notifications` (`act dismissOne dismissAll dismiss invokeAction invokeLast keyboard showHistory
+  expand toggleDnd setDnd isDnd count`), `osd` (`show close state`), `omarchy.dock` (`apps`),
+  `nightlight`, `idle`, `lock`, `shell` (`toggle summon call cycleInput toggleBarTransparency ...`),
+  `omarchy.audio|bluetooth|network|power|monitor|clock|elsewhen|...` (`toggle open close`).
+- Quickshell is never killed, so those bindings keep reaching it while shoji-bar-4 is the visible
+  bar. The gaps are what Quickshell would **show** (OSD, toasts, panels) and what it **owns**:
+  `org.freedesktop.Notifications` is held by Quickshell (pid of `quickshell`, checked with
+  `busctl --user list`), so the notification code of shoji (`notify.rs`) is idle while that lasts.
+- Quickshell's own panels (`omarchy.audio`, `.network`, ...) open in Quickshell's layer, hidden or
+  not depending on the bar. The port is: a command in shoji's socket (`shoji-bar-4 msg ...`, see
+  `crates/shoji-default/src/ipc.rs`) for each action, and the binding pointing at it while shoji is
+  active. `alter-bar` is the natural place to swap the bindings (or a wrapper that forwards to the
+  bar in use).
+
+### Already there
+
+| Action | Where |
+|---|---|
+| Volume up/down/mute, brightness up/down, with the pill | `osd.rs` (reacts to the change, however it was made) |
+| Apps (`Super+Alt+Space`, `omarchy.dock apps`) | `shoji-bar-4 msg toggle launcher` |
+| Lock | `shoji-bar-4 msg lock` |
+| Theme dark/light | `shoji-bar-4 msg theme ...`, palettes in `plugins/colour.rs` |
+| Panels: quick settings, calendar, clipboard history, media | `shoji-bar-4 msg toggle <panel>` |
+| Power dialog (shutdown, reboot, logout) | `power_dialog.rs` |
+| GPU mode (not an Omarchy action) | `plugins/gpu.rs` |
+
+### To port, by how often they are used
+
+1. **Media: play/pause, next, previous** (`XF86AudioPlay/Pause/Next/Prev`, `Super+XF86AudioRaise/Lower`
+   for next/previous, `Alt+XF86AudioPlay` next, `Alt+Shift+XF86AudioPlay` previous). Quickshell does
+   it through MPRIS; shoji has the MPRIS client (`media()`), so a `msg media next|previous|play-pause`
+   is a few lines. Missing: the **OSD for them** (Omarchy's `osd.show` with `media-next`,
+   `media-pause`, ... icons) and a toast when the **track changes** (the thing asked for first).
+2. **Notifications** (`Super+,` act on the last one, `Super+Alt+,` dismiss last, `Super+Shift+,`
+   dismiss all, `Super+Ctrl+,` keyboard control, `Super+Shift+Alt+,` history, `Super+Ctrl+Alt+,`
+   silence). Needs `notify.rs` to be the daemon (Quickshell has the bus name) or to forward to
+   `notifications.*`; then `msg notifications act|dismiss-one|dismiss-all|history|keyboard|dnd`.
+   Also `omarchy-notification-send|dismiss|wait` and the informative ones
+   (`omarchy-notification-time|battery|weather`, `Super+Ctrl+Alt+T|B`) that only need a toast.
+3. **Audio switching**: mute microphone (`XF86AudioMicMute`, `omarchy-audio-input-mute`), switch
+   output (`Shift+XF86AudioMute`, `omarchy-audio-output-switch`), switch media source
+   (`Shift+XF86AudioPlay|Pause`, `media.sourceNext`), precise volume `Alt+XF86Audio*` (±1 %).
+   All have an OSD in Quickshell (microphone icon, output name).
+4. **Brightness extras**: precise (`Alt+`), min/max (`Shift+`), keyboard backlight
+   (`XF86KbdBrightnessUp|Down`, cycle), each with the OSD pill (keyboard icon).
+5. **Omarchy menu** (`Super+Space`, `Super+Esc`, and `Super+Ctrl+` C capture, O toggle, H hardware,
+   T/W theme, S share, R reminder): `omarchy-shell shell toggle omarchy.menu {"menu":...}`. Either
+   forward to Quickshell's menu (works already) or port the menu as a shoji panel; it is a big
+   piece (`omarchy-menu`, `~/.config/omarchy/extensions/omarchy-menu.jsonc`).
+6. **Toggles** (`Super+Ctrl+O` menu, binds `bind_toggle`): top bar (`Super+Shift+Space`;
+   `alter-bar toggle` already switches bars), notification silencing, idle lock (`idle.toggle`),
+   night light (`nightlight.toggle`), touchpad, screensaver, animations, suspend, hybrid GPU
+   (`omarchy-toggle-hybrid-gpu`), theme sync, full-screen desktop. Each is a tile or a switch in
+   quick settings plus a `msg` command.
+7. **Capture**: screenshot (`PRINT`), screen recording (`Alt+PRINT`, with a recording indicator and
+   stop), colour picker, OCR (`omarchy-capture-text`), QR, webcam overlay. The commands exist; what
+   is missing is the **recording indicator** in the bar and the menu entries.
+8. **Clipboard / emojis / reminders**: `omarchy.clipboard` (`Super+Ctrl+V`, shoji has its own
+   history panel), `omarchy.emojis` (`Super+Ctrl+E`, no equivalent), reminders (`Super+Ctrl+R`,
+   `omarchy-reminder`, no equivalent), dictation toggle (`omarchy-dictation`, an indicator while it
+   listens).
+9. **Window and workspace helpers** (these are Hyprland, not shell, and need nothing from the
+   bar): minimize to the dock (`omarchy-hyprland-window-minimize`, needs the dock to show the
+   minimized windows), pop out, transparency, gaps, layout cycle, monitor scaling. Only the dock's
+   view of minimized windows and the workspace layout name in the bar are shell-side.
+10. **Indicators and the rest of the bar**: idle lock on/off, night light, recording, system update
+    (`omarchy.system-update`), weather, Tailscale, battery low hook
+    (`~/.config/omarchy/hooks/battery-low.d`), Bluetooth/Wi-Fi QR (`omarchy.network showQr`),
+    keybindings viewer (`omarchy-menu-keybindings`), input-method cycle (`shell cycleInput`).
+
+### Suggested order of work
+
+1. `msg media ...` + OSD for media actions + track-change toast (small, high use).
+2. `msg notifications ...` and the decision on who owns the bus name.
+3. Audio/brightness extras with their OSD.
+4. Toggles as tiles (idle, night light, silencing, touchpad), reusing `add_tile_row`/`toggle_tile`.
+5. Capture indicator, then menu, emojis and reminders.
+
+Open question for each: forward to Quickshell's IPC (cheap, but needs Quickshell to be running,
+which it always is here) or reimplement natively in shoji (own look, no dependency). The default
+proposed is native for what shoji already has the data for (media, notifications, audio,
+brightness) and forward for the rest.
