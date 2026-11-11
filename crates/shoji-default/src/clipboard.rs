@@ -440,7 +440,8 @@ pub fn panel(output: Output) -> Div {
         );
 
     div()
-        .w(WIDTH)
+        .min_w(WIDTH)
+        .max_w(pct(94.0))
         .flex()
         .flex_col()
         .gap(12.0_f32)

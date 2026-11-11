@@ -83,7 +83,8 @@ pub fn panel() -> Div {
     let spin = animated(0.0f32);
     spin.spring_to(1.0, fast_spatial());
     div()
-        .w(WIDTH)
+        .min_w(WIDTH)
+        .max_w(pct(94.0))
         .p(24.0_f32)
         .rounded(28.0_f32)
         .flex()
