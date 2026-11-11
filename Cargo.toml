@@ -25,7 +25,9 @@ opt-level = 3
 debug = false
 
 [profile.release]
-lto = "thin"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
 # Function names stay, for `scripts/cpu-report.sh`; the debug info goes.
 strip = "debuginfo"
 

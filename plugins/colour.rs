@@ -27,6 +27,10 @@ thread_local! {
     static BAR_ON: Cell<Option<Signal<bool>>> = const { Cell::new(None) };
     static GLASS: Cell<Option<Signal<bool>>> = const { Cell::new(None) };
     static OPACITY: Cell<Option<Signal<f32>>> = const { Cell::new(None) };
+    /// The palette applied last, so that the opacity slider does not read the directory at each step.
+    static APPLIED: std::cell::RefCell<Option<Entry>> = const { std::cell::RefCell::new(None) };
+    /// The blur radius asked of the compositor last.
+    static GLASS_RADIUS: Cell<Option<f32>> = const { Cell::new(None) };
 }
 
 fn sig<T: Clone + 'static>(slot: &'static std::thread::LocalKey<Cell<Option<Signal<T>>>>, init: T) -> Signal<T> {
@@ -99,6 +103,10 @@ fn poll_command() {
                     }
                 }
                 (Some("bar"), Some(v)) => set_bar(v == "on"),
+                (Some("opacity"), Some(v)) => set_opacity(v.parse().unwrap_or(1.0)),
+                (Some("meter"), Some(what)) => {
+                    super::meter::command(what, text.trim().splitn(3, char::is_whitespace).nth(2).unwrap_or(""))
+                }
                 _ => {}
             }
         }
@@ -106,6 +114,7 @@ fn poll_command() {
     drop(set_timeout(Duration::from_millis(150), poll_command));
 }
 
+#[derive(Clone)]
 pub struct Entry {
     pub name: String,
     pub label: String,
@@ -177,8 +186,7 @@ pub fn set_opacity(value: f32) {
         let _ = fs::create_dir_all(file.parent().unwrap());
         let _ = fs::write(file, value.to_string());
     }
-    let wanted = current().get_untracked();
-    if let Some(p) = list().into_iter().find(|p| p.name == wanted) {
+    if let Some(p) = APPLIED.with(|a| a.borrow().clone()) {
         apply(&p);
     }
 }
@@ -309,6 +317,21 @@ fn blur_before_file() -> Option<PathBuf> {
 /// shell's layers (what is see-through in them), and turns it off again for the other palettes if
 /// it was off to begin with.
 fn compositor_glass(radius: f32) {
+    // Only when the radius changes, and off the UI thread: `hyprctl` takes tens of milliseconds,
+    // which is several dropped frames in the middle of a fade.
+    if GLASS_RADIUS.with(|g| g.replace(Some(radius))) == Some(radius) {
+        return;
+    }
+    let state = blur_before_file();
+    std::thread::spawn(move || {
+        static ORDER: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _one_at_a_time = ORDER.lock();
+        compositor_glass_now(radius, state);
+    });
+}
+
+fn compositor_glass_now(radius: f32, blur_before: Option<PathBuf>) {
+    let blur_before_file = || blur_before.clone();
     let hypr = |code: String| {
         let _ = std::process::Command::new("hyprctl").args(["eval", &code]).output();
     };
@@ -359,6 +382,7 @@ pub fn set_bar(now: bool) {
 
 /// Puts the palette in place, with the fade.
 pub fn apply(entry: &Entry) {
+    APPLIED.with(|a| *a.borrow_mut() = Some(entry.clone()));
     compositor_glass(entry.blur);
     label().set(entry.label.clone());
     is_glass().set(entry.blur > 0.0);

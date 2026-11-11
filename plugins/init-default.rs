@@ -5,6 +5,7 @@ mod animation;
 mod colour;
 mod menu;
 mod omarchy_menu;
+mod meter;
 #[path = "music-player.rs"]
 mod music_player;
 mod tray;
