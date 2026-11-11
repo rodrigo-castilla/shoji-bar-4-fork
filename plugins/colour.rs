@@ -26,6 +26,7 @@ thread_local! {
     static LABEL: Cell<Option<Signal<String>>> = const { Cell::new(None) };
     static BAR_ON: Cell<Option<Signal<bool>>> = const { Cell::new(None) };
     static GLASS: Cell<Option<Signal<bool>>> = const { Cell::new(None) };
+    static OPACITY: Cell<Option<Signal<f32>>> = const { Cell::new(None) };
 }
 
 fn sig<T: Clone + 'static>(slot: &'static std::thread::LocalKey<Cell<Option<Signal<T>>>>, init: T) -> Signal<T> {
@@ -59,9 +60,18 @@ pub fn is_glass() -> Signal<bool> {
     sig(&GLASS, false)
 }
 
+/// How opaque the surfaces of the palette in use are, from `MIN_OPACITY` to 1 (the palette as it is).
+pub fn opacity() -> Signal<f32> {
+    sig(&OPACITY, 1.0)
+}
+
+/// The least opacity the slider gives: below this the text would have nothing to be read on.
+pub const MIN_OPACITY: f32 = 0.1;
+
 /// Brings back what was chosen last time, and starts listening for the command file.
 pub fn restore() {
     bar_on().set(bar_saved());
+    opacity().set(opacity_saved());
     current().set(saved().unwrap_or_else(|| "dark".to_owned()));
     // The one saved, or `dark` if it is gone (a file taken away).
     let mut all = list();
@@ -143,6 +153,34 @@ fn bar_saved() -> bool {
     bar_file()
         .and_then(|f| fs::read_to_string(f).ok())
         .is_none_or(|t| t.trim() != "off")
+}
+
+fn opacity_file() -> Option<PathBuf> {
+    Some(state_file()?.with_file_name("opacity"))
+}
+
+fn opacity_saved() -> f32 {
+    opacity_file()
+        .and_then(|f| fs::read_to_string(f).ok())
+        .and_then(|t| t.trim().parse::<f32>().ok())
+        .map_or(1.0, |v| v.clamp(MIN_OPACITY, 1.0))
+}
+
+/// Changes the opacity of whatever palette is in use, with the fade, and remembers it.
+pub fn set_opacity(value: f32) {
+    let value = value.clamp(MIN_OPACITY, 1.0);
+    if (opacity().get_untracked() - value).abs() < 0.005 {
+        return;
+    }
+    opacity().set(value);
+    if let Some(file) = opacity_file() {
+        let _ = fs::create_dir_all(file.parent().unwrap());
+        let _ = fs::write(file, value.to_string());
+    }
+    let wanted = current().get_untracked();
+    if let Some(p) = list().into_iter().find(|p| p.name == wanted) {
+        apply(&p);
+    }
 }
 
 fn remember(name: &str) {
@@ -245,6 +283,18 @@ fn scheme_of(entry: &Entry) -> ColorScheme {
             surface_container_lowest, surface_container_low, surface_container,
             surface_container_high, surface_container_highest, outline, outline_variant);
     }
+    let k = opacity().get_untracked();
+    if k < 1.0 {
+        let fade = |c: &mut Color| *c = c.with_alpha(c.a * k);
+        for c in [
+            &mut scheme.surface, &mut scheme.surface_dim, &mut scheme.surface_bright,
+            &mut scheme.surface_variant, &mut scheme.surface_container_lowest,
+            &mut scheme.surface_container_low, &mut scheme.surface_container,
+            &mut scheme.surface_container_high, &mut scheme.surface_container_highest,
+        ] {
+            fade(c);
+        }
+    }
     scheme
 }
 
@@ -312,7 +362,7 @@ pub fn apply(entry: &Entry) {
     compositor_glass(entry.blur);
     label().set(entry.label.clone());
     is_glass().set(entry.blur > 0.0);
-    if entry.is_stock() {
+    if entry.is_stock() && opacity().get_untracked() >= 1.0 {
         set_scheme_override(None);
         settings().update(|s| s.mode = if entry.dark { ThemeMode::Dark } else { ThemeMode::Light });
     } else {

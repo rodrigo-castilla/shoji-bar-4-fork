@@ -5,10 +5,11 @@
 
 use super::colour;
 use anti_webui::prelude::*;
+use anti_webui_md3e::components::styled_slider;
 use anti_webui_md3e::icons;
 use shoji_core::ui::sym;
 use shoji_default::qs_pages::{header, item, scrolling, subheading};
-use shoji_default::quick_settings::section;
+use shoji_default::quick_settings::{section, slider_style};
 use shoji_default::Ui;
 
 pub fn install(ui: &mut Ui) {
@@ -59,4 +60,23 @@ fn page() -> Div {
         .gap(10.0_f32)
         .child(header("Theme", div()))
         .child(section().child(subheading("Palettes")).child(scrolling(list)))
+        .child(opacity_row())
+}
+
+/// A slider for how opaque the surfaces are, whichever palette is in use.
+fn opacity_row() -> Div {
+    let value = Binding::new(
+        move || colour::opacity().get(),
+        move |v| colour::set_opacity(v),
+    );
+    section().child(subheading("Opacity")).child(
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(10.0_f32)
+            .px(8.0_f32)
+            .child(sym(icons::OPACITY, 20.0, |c| c.on_surface_variant))
+            .child(styled_slider(value, slider_style()).flex_1().min_w(0.0).my(-8.0)),
+    )
 }
