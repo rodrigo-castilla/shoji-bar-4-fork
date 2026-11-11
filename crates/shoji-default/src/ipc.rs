@@ -97,6 +97,14 @@ pub fn serve() {
 }
 
 /// What could keep the shell busy, on one line, for `scripts/cpu-report.sh`.
+/// What this shell leaves in the session: the keys it took over, Omarchy's socket and its own.
+/// Safe to call more than once.
+pub fn cleanup() {
+    crate::keys::release();
+    crate::omarchy::release();
+    let _ = std::fs::remove_file(socket());
+}
+
 fn status() -> String {
     let panel = panels::current().map_or("none".into(), |(output, panel)| {
         format!("{panel}@{output}")
@@ -173,9 +181,7 @@ fn run(line: &str) -> Result<String, String> {
         }
         ["status"] => Ok(status()),
         ["quit"] => {
-            crate::keys::release();
-            crate::omarchy::release();
-            let _ = std::fs::remove_file(socket());
+            cleanup();
             quit();
             Ok(String::new())
         }

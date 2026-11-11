@@ -10,6 +10,8 @@ shoji-core.workspace = true
 anti-webui.workspace = true
 anti-webui-md3e.workspace = true
 serde_json.workspace = true
+libc = "0.2"
+signal-hook-registry = "1"
 
 [features]
 dynamic_linking = ["shoji-core/dynamic_linking"]

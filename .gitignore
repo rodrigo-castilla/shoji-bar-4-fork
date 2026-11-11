@@ -1,3 +1,18 @@
-target/
-.cargo/config.toml
-logs/
+# Build output
+/target/
+
+# Machine-local: points cargo at the patched copy of AntiWebUI that scripts/apply-antiwebui-patch.sh
+# writes (and its backup). Never commit it, nor a Cargo.lock that cargo rewrote because of it
+# (`git checkout Cargo.lock` before committing).
+/.cargo/
+
+# Measurements from scripts/fps-test.sh and scripts/perf-ab.sh
+/logs/
+
+# Editor and tool leftovers
+*.bak
+*.orig
+*.rej
+*.part
+*.swp
+.DS_Store

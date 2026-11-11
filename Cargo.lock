@@ -39,6 +39,7 @@ dependencies = [
 [[package]]
 name = "anti-webui"
 version = "0.1.0"
+source = "git+https://github.com/bea4dev/AntiWebUI.git?branch=main#c54748ecc6b2bd1fe03abce4af70a93beea67be3"
 dependencies = [
  "anti-webui-dylib",
  "anti-webui-internal",
@@ -47,6 +48,7 @@ dependencies = [
 [[package]]
 name = "anti-webui-app"
 version = "0.1.0"
+source = "git+https://github.com/bea4dev/AntiWebUI.git?branch=main#c54748ecc6b2bd1fe03abce4af70a93beea67be3"
 dependencies = [
  "anti-webui-core",
  "anti-webui-macos",
@@ -63,6 +65,7 @@ dependencies = [
 [[package]]
 name = "anti-webui-core"
 version = "0.1.0"
+source = "git+https://github.com/bea4dev/AntiWebUI.git?branch=main#c54748ecc6b2bd1fe03abce4af70a93beea67be3"
 dependencies = [
  "anti-webui-style",
  "icu_properties",
@@ -83,6 +86,7 @@ dependencies = [
 [[package]]
 name = "anti-webui-dylib"
 version = "0.1.0"
+source = "git+https://github.com/bea4dev/AntiWebUI.git?branch=main#c54748ecc6b2bd1fe03abce4af70a93beea67be3"
 dependencies = [
  "anti-webui-internal",
 ]
@@ -90,6 +94,7 @@ dependencies = [
 [[package]]
 name = "anti-webui-internal"
 version = "0.1.0"
+source = "git+https://github.com/bea4dev/AntiWebUI.git?branch=main#c54748ecc6b2bd1fe03abce4af70a93beea67be3"
 dependencies = [
  "anti-webui-app",
  "anti-webui-core",
@@ -103,6 +108,7 @@ dependencies = [
 [[package]]
 name = "anti-webui-macos"
 version = "0.1.0"
+source = "git+https://github.com/bea4dev/AntiWebUI.git?branch=main#c54748ecc6b2bd1fe03abce4af70a93beea67be3"
 dependencies = [
  "anti-webui-core",
  "dispatch2",
@@ -119,6 +125,7 @@ dependencies = [
 [[package]]
 name = "anti-webui-macros"
 version = "0.1.0"
+source = "git+https://github.com/bea4dev/AntiWebUI.git?branch=main#c54748ecc6b2bd1fe03abce4af70a93beea67be3"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -128,6 +135,7 @@ dependencies = [
 [[package]]
 name = "anti-webui-md3e"
 version = "0.1.0"
+source = "git+https://github.com/bea4dev/AntiWebUI.git?branch=main#c54748ecc6b2bd1fe03abce4af70a93beea67be3"
 dependencies = [
  "anti-webui",
  "anti-webui-symbols-outlined",
@@ -136,14 +144,17 @@ dependencies = [
 [[package]]
 name = "anti-webui-style"
 version = "0.1.0"
+source = "git+https://github.com/bea4dev/AntiWebUI.git?branch=main#c54748ecc6b2bd1fe03abce4af70a93beea67be3"
 
 [[package]]
 name = "anti-webui-symbols-outlined"
 version = "0.1.0"
+source = "git+https://github.com/bea4dev/AntiWebUI.git?branch=main#c54748ecc6b2bd1fe03abce4af70a93beea67be3"
 
 [[package]]
 name = "anti-webui-wayland"
 version = "0.1.0"
+source = "git+https://github.com/bea4dev/AntiWebUI.git?branch=main#c54748ecc6b2bd1fe03abce4af70a93beea67be3"
 dependencies = [
  "anti-webui-core",
  "raw-window-handle",
@@ -158,6 +169,7 @@ dependencies = [
 [[package]]
 name = "anti-webui-wayland-shell"
 version = "0.1.0"
+source = "git+https://github.com/bea4dev/AntiWebUI.git?branch=main#c54748ecc6b2bd1fe03abce4af70a93beea67be3"
 dependencies = [
  "anti-webui-app",
  "anti-webui-core",
@@ -181,6 +193,7 @@ dependencies = [
 [[package]]
 name = "anti-webui-wgpu"
 version = "0.1.0"
+source = "git+https://github.com/bea4dev/AntiWebUI.git?branch=main#c54748ecc6b2bd1fe03abce4af70a93beea67be3"
 dependencies = [
  "anti-webui-core",
  "ash",
@@ -203,6 +216,7 @@ dependencies = [
 [[package]]
 name = "anti-webui-widgets"
 version = "0.1.0"
+source = "git+https://github.com/bea4dev/AntiWebUI.git?branch=main#c54748ecc6b2bd1fe03abce4af70a93beea67be3"
 dependencies = [
  "anti-webui-core",
 ]
@@ -210,6 +224,7 @@ dependencies = [
 [[package]]
 name = "anti-webui-windows"
 version = "0.1.0"
+source = "git+https://github.com/bea4dev/AntiWebUI.git?branch=main#c54748ecc6b2bd1fe03abce4af70a93beea67be3"
 dependencies = [
  "anti-webui-core",
  "raw-window-handle",
@@ -220,6 +235,7 @@ dependencies = [
 [[package]]
 name = "anti-webui-x11"
 version = "0.1.0"
+source = "git+https://github.com/bea4dev/AntiWebUI.git?branch=main#c54748ecc6b2bd1fe03abce4af70a93beea67be3"
 dependencies = [
  "anti-webui-core",
  "log",
@@ -1996,7 +2012,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "shoji-bar-4"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "anti-webui",
  "anti-webui-md3e",
@@ -2007,7 +2023,7 @@ dependencies = [
 
 [[package]]
 name = "shoji-core"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "anti-webui",
  "anti-webui-md3e",
@@ -2016,12 +2032,14 @@ dependencies = [
 
 [[package]]
 name = "shoji-default"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "anti-webui",
  "anti-webui-md3e",
+ "libc",
  "serde_json",
  "shoji-core",
+ "signal-hook-registry",
 ]
 
 [[package]]
@@ -3260,19 +3278,3 @@ dependencies = [
  "syn 3.0.10",
  "winnow",
 ]
-
-[[patch.unused]]
-name = "anti-webui-code"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "anti-webui-markdown"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "anti-webui-pdf"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "anti-webui-video"
-version = "0.1.0"

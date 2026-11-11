@@ -164,12 +164,32 @@ fn write_history(list: &[serde_json::Value]) {
 
 static HISTORY: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// Runs `f` with the history to itself: this process's other threads wait on the mutex, and any
+/// other writer that takes the same lock file (a second shoji) waits on `flock`. The file is read
+/// and written whole, so two writers at once would drop one of the two changes.
+fn locked<R>(f: impl FnOnce() -> R) -> R {
+    let _one = HISTORY.lock().unwrap_or_else(|e| e.into_inner());
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(history_path().with_extension("json.lock"))
+        .ok();
+    if let Some(file) = &lock {
+        let _ = file.lock();
+    }
+    let out = f();
+    if let Some(file) = &lock {
+        let _ = file.unlock();
+    }
+    out
+}
+
 /// Reads the history, off this thread.
 fn load(done: impl Fn(Option<Vec<Entry>>) + 'static) {
     let to_ui = ui_channel(done);
     let _ = std::thread::Builder::new().name("shoji-bar-4 clipboard".into()).spawn(move || {
-        let _one = HISTORY.lock();
-        let list: Vec<Entry> = read_history().iter().filter_map(Entry::from_json).collect();
+        let list: Vec<Entry> = locked(|| read_history()).iter().filter_map(Entry::from_json).collect();
         to_ui.send(Some(list));
     });
 }
@@ -193,10 +213,7 @@ fn picture_writer(written: Signal<HashSet<u64>>) -> mpsc::Sender<Entry> {
 fn copy(entry: &Entry) {
     let key = entry.line.clone();
     let _ = std::thread::Builder::new().name("shoji-bar-4 clipboard".into()).spawn(move || {
-        let index = {
-            let _one = HISTORY.lock();
-            read_history().iter().position(|v| key_of(v).as_deref() == Some(key.as_str()))
-        };
+        let index = locked(|| read_history().iter().position(|v| key_of(v).as_deref() == Some(key.as_str())));
         if let Some(index) = index {
             let _ = Command::new("omarchy-clipboard-paste-text")
                 .args(["--copy-only", "--history-index", &index.to_string()])
@@ -210,12 +227,13 @@ fn copy(entry: &Entry) {
 fn forget(entry: &Entry) {
     let key = entry.line.clone();
     let _ = std::thread::Builder::new().name("shoji-bar-4 clipboard".into()).spawn(move || {
-        let _one = HISTORY.lock();
-        let mut list = read_history();
-        if let Some(at) = list.iter().position(|v| key_of(v).as_deref() == Some(key.as_str())) {
-            list.remove(at);
-            write_history(&list);
-        }
+        locked(|| {
+            let mut list = read_history();
+            if let Some(at) = list.iter().position(|v| key_of(v).as_deref() == Some(key.as_str())) {
+                list.remove(at);
+                write_history(&list);
+            }
+        });
     });
 }
 
@@ -245,11 +263,12 @@ pub fn watch() {
             for line in BufReader::new(out).lines().map_while(Result::ok) {
                 let Ok(entry) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
                 let Some(key) = key_of(&entry) else { continue };
-                let _one = HISTORY.lock();
-                let mut list = read_history();
-                list.retain(|v| key_of(v).as_deref() != Some(key.as_str()));
-                list.insert(0, entry);
-                write_history(&list);
+                locked(|| {
+                    let mut list = read_history();
+                    list.retain(|v| key_of(v).as_deref() != Some(key.as_str()));
+                    list.insert(0, entry);
+                    write_history(&list);
+                });
             }
             let _ = child.wait();
         });
