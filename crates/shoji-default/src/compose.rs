@@ -17,6 +17,14 @@ use crate::panels::{self, PanelDef, PanelId};
 use crate::{dock, ipc, keys, lock, notify, omarchy, osd, theme, wallpaper, wm};
 use anti_webui::shell::prelude::*;
 use std::rc::Rc;
+use std::sync::OnceLock;
+
+static OUTLINE: OnceLock<String> = OnceLock::new();
+
+/// What `shoji-bar-4 msg layout` prints: the interface that was installed, as text.
+pub fn outline() -> Option<&'static str> {
+    OUTLINE.get().map(String::as_str)
+}
 
 /// The services that come with the stock interface and have a screen of their own. Each is on in
 /// the stock interface; turn one off to draw it yourself (or to go without).
@@ -92,9 +100,44 @@ impl Ui {
         self
     }
 
+    /// The interface as text: the bar's islands by zone, the panels, what else is on. This is what
+    /// `shoji-bar-4 msg layout` prints, so a developer can see what to name in `insert_after`,
+    /// `replace` or `msg toggle`.
+    pub fn outline(&self) -> String {
+        use std::fmt::Write;
+        let mut out = format!("shoji-bar-4 {} interface\n\n", env!("CARGO_PKG_VERSION"));
+        match &self.bar {
+            Some(bar) => out.push_str(&bar.outline()),
+            None => out.push_str("bar  none\n"),
+        }
+        let _ = writeln!(out, "\npanels ({})   open one with: shoji-bar-4 msg toggle <id>", self.panels.len());
+        for panel in &self.panels {
+            let mut flags = Vec::new();
+            if panel.has_field() {
+                flags.push("text field");
+            }
+            if panel.is_veiled() {
+                flags.push("veil");
+            }
+            let _ = writeln!(out, "  {:<16} {}", panel.id().to_string(), flags.join(", "));
+        }
+        let on = |b: bool| if b { "on" } else { "off" };
+        let _ = write!(
+            out,
+            "\nother layers: dock={} wallpaper={}\nservices: notifications={} osd={} lock={}\n",
+            on(self.dock),
+            on(self.wallpaper),
+            on(self.services.notifications),
+            on(self.services.osd),
+            on(self.services.lock),
+        );
+        out
+    }
+
     /// Puts the interface on the screen. Call it from the root of the shell (see
     /// [`run_with`](crate::run_with)).
     pub fn install(self) {
+        let _ = OUTLINE.set(self.outline());
         ipc::serve();
         theme::install();
         wm::share_theme();

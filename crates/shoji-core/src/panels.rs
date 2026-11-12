@@ -113,6 +113,16 @@ impl PanelDef {
     }
 
     /// The id the panel was registered under.
+    /// Whether the panel has a text field that takes the keyboard.
+    pub fn has_field(&self) -> bool {
+        self.has_field
+    }
+
+    /// Whether a veil goes over the screen behind the panel.
+    pub fn is_veiled(&self) -> bool {
+        self.veiled
+    }
+
     pub fn id(&self) -> PanelId {
         self.id
     }

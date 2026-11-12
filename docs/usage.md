@@ -49,6 +49,7 @@ shoji-bar-4 msg close
 shoji-bar-4 msg lock                           # only the password unlocks
 shoji-bar-4 msg theme dark|light|auto|toggle
 shoji-bar-4 msg status                         # open panels, running clocks and so on
+shoji-bar-4 msg layout                         # the bar's islands and the panels, with their ids (for plugin development)
 shoji-bar-4 msg quit
 ```
 

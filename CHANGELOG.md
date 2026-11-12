@@ -19,6 +19,11 @@ Some features call external tools: `grim` (translucent ink), `wl-paste`, `setpri
 ## [Unreleased]
 
 ### Added
+- `shoji-bar-4 msg layout`: prints the interface that is running (the bar's islands by zone with
+  their ids and whether they are stock or custom, the stock islands that were removed, the panels
+  with their ids and flags, the other layers and services), as a helper for plugin development: it
+  tells you which id to give `insert_after`, `insert_before`, `replace` or `msg toggle`. Answers
+  of `msg` can now take several lines.
 - `docs/architecture.md`: a reading guide to the code (entry point, startup, rendering, panels, theme,
   outside channels).
 
