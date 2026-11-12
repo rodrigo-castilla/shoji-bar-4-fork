@@ -13,6 +13,7 @@
 //! shoji-bar-4 msg theme dark|light|auto|toggle
 //! shoji-bar-4 msg quit
 //! shoji-bar-4 msg status
+//! shoji-bar-4 msg layout     # the bar's islands and the panels, with their ids
 //! ```
 //!
 //! Without an output, a panel opens where the window with the keyboard is.
@@ -39,7 +40,8 @@ pub fn send(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     writeln!(stream, "{}", args.join(" "))?;
     stream.shutdown(std::net::Shutdown::Write)?;
     let mut answer = String::new();
-    BufReader::new(stream).read_line(&mut answer)?;
+    // An answer can take several lines (`layout`).
+    std::io::Read::read_to_string(&mut BufReader::new(stream), &mut answer)?;
     let answer = answer.trim();
     match answer.strip_prefix("ok") {
         Some(said) if said.is_empty() || said.starts_with(' ') => {
@@ -180,6 +182,9 @@ fn run(line: &str) -> Result<String, String> {
             Ok(String::new())
         }
         ["status"] => Ok(status()),
+        ["layout"] => crate::compose::outline()
+            .map(|o| o.trim_end().to_owned())
+            .ok_or_else(|| "the interface is not installed yet".into()),
         ["quit"] => {
             cleanup();
             quit();

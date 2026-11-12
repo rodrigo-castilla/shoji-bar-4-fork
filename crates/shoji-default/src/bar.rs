@@ -86,6 +86,50 @@ impl BarLayout {
         }
     }
 
+    /// The layout as text, for a developer who needs to know what each island is called and where
+    /// it is (`shoji-bar-4 msg layout`). Marks what comes with the stock bar, and lists the stock
+    /// islands that are gone.
+    pub fn outline(&self) -> String {
+        use std::fmt::Write;
+        let stock = Self::stock();
+        let stock_ids: Vec<&str> = [&stock.left, &stock.center, &stock.right]
+            .into_iter()
+            .flatten()
+            .map(|i| i.id)
+            .collect();
+        let mut out = String::new();
+        let _ = writeln!(
+            out,
+            "bar  height={}  background={}",
+            self.height,
+            if self.background.is_some() { "custom" } else { "none" }
+        );
+        for (zone, islands) in [("left", &self.left), ("center", &self.center), ("right", &self.right)] {
+            let _ = writeln!(out, "  {zone} ({})", islands.len());
+            for (at, island) in islands.iter().enumerate() {
+                let origin = if stock_ids.contains(&island.id) { "stock" } else { "custom" };
+                let _ = writeln!(out, "    [{at}] {:<14} {origin}", island.id);
+            }
+        }
+        let present: Vec<&str> = [&self.left, &self.center, &self.right]
+            .into_iter()
+            .flatten()
+            .map(|i| i.id)
+            .collect();
+        let gone: Vec<&str> = stock_ids.iter().copied().filter(|id| !present.contains(id)).collect();
+        if !gone.is_empty() {
+            let _ = writeln!(out, "  stock islands removed: {}", gone.join(", "));
+        }
+        let _ = writeln!(
+            out,
+            "  edit it in a plugin's `patch(ui)`, through `ui.bar`, naming an id above:\n    \
+             bar.insert_after(\"<id>\", Island::new(\"mine\", builder))   bar.insert_before(..)\n    \
+             bar.replace(\"<id>\", Island::new(..))   bar.remove(\"<id>\")\n    \
+             (an id that is not on the bar is not an error: the call returns false and does nothing)"
+        );
+        out
+    }
+
     fn groups_mut(&mut self) -> [&mut Vec<Island>; 3] {
         [&mut self.left, &mut self.center, &mut self.right]
     }
