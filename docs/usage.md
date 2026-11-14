@@ -30,7 +30,7 @@ COMPOSITOR.key.bind("launcher", "Super+A", toggleLauncher);
 The window frames can follow the shell's colors:
 
 - The shell stays connected to ShojiWM's IPC socket (`$XDG_RUNTIME_DIR/shojiwm-$WAYLAND_DISPLAY.sock`).
-- It sends its color scheme there as `theme.set` (`src/wm.rs`): on start, on reconnecting (including after a config reload), and whenever the scheme changes.
+- It sends its color scheme there as `theme.set` (`crates/shoji-bar-4-core/src/wm.rs`): on start, on reconnecting (including after a config reload), and whenever the scheme changes.
 - A config that doesn't handle `theme.set` ignores it.
 
 The layer namespaces are `shoji-bar-4-bar`, `-dock`, `-quick-settings`, `-calendar`, `-launcher`, `-clipboard`, `-media`, `-notifications`, `-osd`, `-power` and `-wallpaper`. Use them to give layers ShojiWM effects such as blur.

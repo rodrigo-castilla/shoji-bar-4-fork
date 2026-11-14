@@ -1,5 +1,14 @@
 # Development
 
+## Layout of the repository
+
+The project is a cargo workspace of two crates:
+
+- `crates/shoji-bar-4-core`: a library with everything the shell is made of. The components (the bar, the dock, the panels, the lock screen, the notifications, the OSD) and the machinery under them (settings, theme, the ShojiWM link, the shell layers). `run(root)` starts the shell: it handles the `msg` and `preview` subcommands and otherwise connects to the compositor and runs `root` on the UI thread.
+- `crates/shoji-bar-4`: the binary. Its `main.rs` is the root: it says what is opened, and for each output. How the pieces are arranged is decided here, not in the core.
+
+The binary is still `target/release/shoji-bar-4`, at the root of the workspace.
+
 ## AntiWebUI
 
 AntiWebUI comes from GitHub's `main`, and `Cargo.lock` pins the commit used. To move to a newer AntiWebUI:
@@ -46,12 +55,12 @@ shoji-bar-4 preview quick-settings right.png --bar-position right --scale 1
 
 ## Layer lifecycle tests
 
-`src/shell_layer.rs` owns shell-surface creation, output binding, placement-driven reconfiguration and closing. Production uses its Wayland adapter; unit tests use the recording adapter through the same `open_bar` and `install_panels` interface. This covers multi-output assignment, unrelated-setting isolation, in-place placement updates and panel input changes without a compositor.
+`crates/shoji-bar-4-core/src/shell_layer.rs` owns shell-surface creation, output binding, placement-driven reconfiguration and closing. Production uses its Wayland adapter; unit tests use the recording adapter through the same `open_bar` and `install_panels` interface. This covers multi-output assignment, unrelated-setting isolation, in-place placement updates and panel input changes without a compositor.
 
 A bar reserves its thickness from its first commit, and moves to another edge with one `set_geometry`, which changes the edge, both sizes and the reserved zone in one commit. AntiWebUI's own layer protocol tests cover what that sends.
 
 ```sh
-cargo test --locked --bin shoji-bar-4 shell_layer::tests
+cargo test --locked -p shoji-bar-4-core shell_layer::tests
 ```
 
 ## CPU reports
