@@ -22,6 +22,7 @@ pub mod preview;
 pub mod qs_pages;
 pub mod qs_settings;
 pub mod quick_settings;
+pub mod run;
 pub mod settings;
 pub mod shell_layer;
 pub mod theme;
@@ -29,3 +30,5 @@ pub mod ui;
 pub mod user;
 pub mod wallpaper;
 pub mod wm;
+
+pub use run::run;
