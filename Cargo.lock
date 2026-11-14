@@ -2123,6 +2123,14 @@ name = "shoji-bar-4"
 version = "0.1.0"
 dependencies = [
  "anti-webui",
+ "shoji-bar-4-core",
+]
+
+[[package]]
+name = "shoji-bar-4-core"
+version = "0.1.0"
+dependencies = [
+ "anti-webui",
  "anti-webui-md3e",
  "serde_json",
  "tempfile",

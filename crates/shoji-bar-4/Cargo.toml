@@ -6,15 +6,9 @@ description.workspace = true
 license.workspace = true
 
 [dependencies]
+shoji-bar-4-core.workspace = true
 anti-webui.workspace = true
-anti-webui-md3e.workspace = true
-serde_json.workspace = true
-ureq.workspace = true
-url.workspace = true
-
-[dev-dependencies]
-tempfile.workspace = true
 
 [features]
 ## Links AntiWebUI dynamically for faster rebuilds while developing.
-dynamic_linking = ["anti-webui/dynamic_linking"]
+dynamic_linking = ["shoji-bar-4-core/dynamic_linking"]

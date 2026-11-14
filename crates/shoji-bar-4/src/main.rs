@@ -1,33 +1,6 @@
 //! shoji-bar-4: a Material 3 Expressive desktop shell for ShojiWM.
 
-mod appinfo;
-mod bar;
-mod battery_card;
-mod calendar;
-mod clipboard;
-mod dock;
-mod ipc;
-mod launcher;
-mod lock;
-mod media_panel;
-mod notify;
-mod osd;
-mod pam;
-mod panels;
-mod placement;
-mod power_dialog;
-mod preview;
-mod qs_pages;
-mod qs_settings;
-mod quick_settings;
-mod settings;
-mod shell_layer;
-mod theme;
-mod ui;
-mod user;
-mod wallpaper;
-mod wm;
-
+use shoji_bar_4_core::{dock, ipc, lock, osd, preview, shell_layer, theme, wallpaper, wm};
 use anti_webui::shell::prelude::*;
 
 fn main() {
