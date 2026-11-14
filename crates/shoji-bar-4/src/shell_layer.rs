@@ -261,6 +261,27 @@ pub(crate) fn open_popups<A: Adapter>(adapter: A) {
     });
 }
 
+/// The production entry points: the layers of the shell on Wayland. The adapter seam above stays
+/// private to this module (the tests use it), so whoever starts the shell uses these.
+pub mod wayland {
+    use anti_webui::shell::prelude::Output;
+
+    /// Opens the bar on `output` and keeps it up to date with the placement.
+    pub fn open_bar(output: Output) {
+        super::open_bar(output, super::Wayland);
+    }
+
+    /// Keeps the notification popups mounted while cards arrive and leave.
+    pub fn open_popups() {
+        super::open_popups(super::Wayland);
+    }
+
+    /// Keeps every panel's layer mounted on `output`.
+    pub fn install_panels(output: Output) {
+        super::install_panels(output, super::Wayland);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

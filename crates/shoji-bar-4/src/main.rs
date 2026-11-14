@@ -53,14 +53,14 @@ fn main() {
             ipc::serve();
             theme::install();
             wm::share_theme();
-            shell_layer::open_popups(shell_layer::Wayland);
+            shell_layer::wayland::open_popups();
             osd::install();
             lock::install();
             for_each_output(|output| {
-                shell_layer::open_bar(output.clone(), shell_layer::Wayland);
+                shell_layer::wayland::open_bar(output.clone());
                 dock::open(output.clone());
                 wallpaper::open(output.clone());
-                shell_layer::install_panels(output, shell_layer::Wayland);
+                shell_layer::wayland::install_panels(output);
             });
         });
     if let Err(e) = result {
